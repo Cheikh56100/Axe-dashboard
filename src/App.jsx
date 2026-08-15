@@ -5,7 +5,8 @@ import {
   Clock, TrendingUp, UserCircle2, Plus, Stamp, ChevronDown,
   Filter, ArrowUpRight, CircleDot, Loader2, RefreshCw, History,
   ChevronUp, CalendarDays, CalendarRange, Settings2, Trash2,
-  Pencil, ChevronLeft, ShieldCheck, Home, LogOut, Mail, Lock, UserRound
+  Pencil, ChevronLeft, ShieldCheck, Home, LogOut, Mail, Lock, UserRound,
+  Phone, Briefcase, UserCheck, Wallet, ShieldAlert
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { motion } from "framer-motion";
@@ -18,8 +19,9 @@ const T = {
   amber: "#D97706", amberSoft: "#FEF3C7",
   /* accent sobre façon Kabineo (indigo) */
   navy: "#4F46E5", navySoft: "#EEF2FF",
-  /* sidebar claire façon Kabineo : blanc pur + bordure très légère */
-  sidebarBg: "#FFFFFF", sidebarBg2: "#F1F5F9", sidebarInk: "#334155", sidebarInkMuted: "#94A3B8", sidebarActive: "#EEF2FF",
+  /* sidebar sombre façon "slate/ardoise" : fond bleu-nuit très foncé, textes clairs */
+  sidebarBg: "#0F172A", sidebarBg2: "#1E293B", sidebarInk: "#E2E8F0", sidebarInkMuted: "#94A3B8",
+  sidebarActive: "rgba(99,102,241,0.22)", sidebarBorder: "#1E293B", sidebarAccent: "#818CF8",
   serif: "'Plus Jakarta Sans', 'Inter', -apple-system, sans-serif", mono: "'JetBrains Mono', ui-monospace, monospace", sans: "'Inter', -apple-system, sans-serif",
   shadow: "0 1px 2px rgba(15,23,42,0.04), 0 8px 20px -6px rgba(15,23,42,0.08)",
   shadowSm: "0 1px 2px rgba(15,23,42,0.05), 0 1px 3px rgba(15,23,42,0.06)",
@@ -75,6 +77,8 @@ function migrateClients(list) {
   return (list || []).map((c, i) => {
     const next = { ...c };
     if (!next.id) next.id = next.siren ? `siren-${next.siren}` : `c-${i}-${next.nom || "x"}`;
+    if (!next.portefeuilleId) next.portefeuilleId = "axe"; // valeur par défaut pour les données d'origine (avant multi-cabinets)
+    if (!next.statutDossier) next.statutDossier = "actif"; // Actif / Inactif
     if (!next.expert) next.expert = "";
     if (!next.chefMission) next.chefMission = "";
     if (!next.dateCloture) next.dateCloture = "";
@@ -335,30 +339,33 @@ const BUCKET_LABELS = {
 /* ============================================================
    STORAGE HELPERS
    ============================================================ */
-/* ---- Clients : Supabase (table "clients", colonnes id text + data jsonb) ---- */
+/* ---- Clients : Supabase (table "clients", colonnes id text + data jsonb + portefeuille_id) ---- */
 async function loadClientsFromSupabase() {
-  const { data, error } = await supabase.from("clients").select("id, data");
+  const { data, error } = await supabase.from("clients").select("id, data, portefeuille_id");
   if (error) { console.error("Erreur chargement clients :", error.message); return null; }
   if (!data) return null;
-  return data.map((row) => ({ id: row.id, ...(row.data || {}) }));
+  return data.map((row) => ({ id: row.id, portefeuilleId: row.portefeuille_id, ...(row.data || {}) }));
 }
 async function insertClientRemote(client) {
-  const { id, ...rest } = client;
-  const { error } = await supabase.from("clients").insert({ id, data: rest });
+  const { id, portefeuilleId, ...rest } = client;
+  const { error } = await supabase.from("clients").insert({ id, data: rest, portefeuille_id: portefeuilleId || null });
   if (error) console.error("Erreur création client :", error.message);
 }
 async function updateClientRemote(id, fullClient) {
-  const { id: _drop, ...rest } = fullClient;
+  const { id: _drop, portefeuilleId: _drop2, ...rest } = fullClient;
   const { error } = await supabase.from("clients").update({ data: rest }).eq("id", id);
   if (error) console.error("Erreur sauvegarde client :", error.message);
 }
 
-/* ---- Équipe : Supabase (table "team", colonnes id text + nom text + color text) ----
-   Avant : localStorage (team-v1), donc invisible pour les autres postes.
-   Le roster (liste des collaborateurs et leurs couleurs) est maintenant une donnée
-   partagée comme les clients, avec le même mécanisme de synchronisation temps réel. */
+/* ---- Équipe : Supabase (table "team"). Un compte = un collaborateur.
+   Chaque inscription (email + mot de passe) crée automatiquement, côté base
+   de données, une fiche "team" qui lui est liée (voir trigger handle_new_user
+   dans supabase-init.sql). Le rôle (collaborateur / expert / chef_mission / admin)
+   et le portefeuille (cabinet) déterminent ce que la personne peut voir et faire. ---- */
 async function loadTeamFromSupabase() {
-  const { data, error } = await supabase.from("team").select("id, nom, color").order("nom", { ascending: true });
+  const { data, error } = await supabase.from("team")
+    .select("id, nom, color, email, telephone, cabinet_nom, role, statut, portefeuille_id, auth_user_id")
+    .order("nom", { ascending: true });
   if (error) { console.error("Erreur chargement équipe :", error.message); return null; }
   return data;
 }
@@ -375,16 +382,19 @@ async function deleteTeamMemberRemote(id) {
   if (error) console.error("Erreur suppression collaborateur :", error.message);
 }
 
-/* ---- Identité locale : quel collaborateur utilise CE poste. Volontairement gardée
-   en localStorage : ce n'est pas une donnée métier à partager, juste une préférence
-   d'appareil (comme "se souvenir de moi"), donc pas de table Supabase nécessaire. ---- */
-async function loadMe() {
-  try { return localStorage.getItem("me-v1") || null; } catch (e) {}
-  return null;
+/* ---- Portefeuilles : les cabinets clients de l'outil (Axe Experts, KOF Experts, …) ---- */
+async function loadPortefeuillesFromSupabase() {
+  const { data, error } = await supabase.from("portefeuilles").select("id, nom, domaine").order("nom", { ascending: true });
+  if (error) { console.error("Erreur chargement portefeuilles :", error.message); return null; }
+  return data;
 }
-async function saveMe(name) {
-  try { localStorage.setItem("me-v1", name); } catch (e) {}
+async function insertPortefeuilleRemote(p) {
+  const { error } = await supabase.from("portefeuilles").insert(p);
+  if (error) console.error("Erreur création portefeuille :", error.message);
+  return error;
 }
+
+const ROLE_LABELS = { collaborateur: "Collaborateur", expert: "Expert", chef_mission: "Chef de mission", admin: "Admin" };
 
 /* ============================================================
    APP
@@ -392,8 +402,8 @@ async function saveMe(name) {
 function CabinetApp({ session, onLogout }) {
   const [clients, setClients] = useState(null);
   const [team, setTeam] = useState(null);
+  const [portefeuilles, setPortefeuilles] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [me, setMe] = useState(null);
   const [view, setView] = useState("dashboard");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("Tous");
@@ -407,13 +417,14 @@ function CabinetApp({ session, onLogout }) {
   // Empêche le canal temps réel de "rejouer" nos propres écritures juste après qu'on les a envoyées
   const pendingLocalIds = useRef(new Set());
   const pendingLocalTeamIds = useRef(new Set());
+  const pendingLocalPortefeuilleIds = useRef(new Set());
 
   useEffect(() => {
     (async () => {
-      const [storedClients, storedTeam, meName] = await Promise.all([
+      const [storedClients, storedTeam, storedPortefeuilles] = await Promise.all([
         loadClientsFromSupabase(),
         loadTeamFromSupabase(),
-        loadMe(),
+        loadPortefeuillesFromSupabase(),
       ]);
       if (storedClients && storedClients.length) {
         setClients(migrateClients(storedClients));
@@ -421,15 +432,8 @@ function CabinetApp({ session, onLogout }) {
         // Table vide (premier lancement) : on part des données d'origine, à insérer une fois dans Supabase
         setClients(migrateClients(RAW_SEED_CLIENTS));
       }
-      if (storedTeam && storedTeam.length) {
-        setTeam(storedTeam);
-      } else {
-        // Table "team" vide (premier lancement) : on insère le roster par défaut dans Supabase
-        // une bonne fois pour toutes, pour que tous les postes démarrent avec la même liste.
-        setTeam(DEFAULT_TEAM);
-        Promise.all(DEFAULT_TEAM.map((m) => insertTeamMemberRemote(m)));
-      }
-      setMe(meName);
+      setTeam(storedTeam || []);
+      setPortefeuilles(storedPortefeuilles || []);
       setLoading(false);
     })();
 
@@ -449,11 +453,11 @@ function CabinetApp({ session, onLogout }) {
             return;
           }
           if (payload.eventType === "INSERT") {
-            const incoming = { id: payload.new.id, ...(payload.new.data || {}) };
+            const incoming = { id: payload.new.id, portefeuilleId: payload.new.portefeuille_id, ...(payload.new.data || {}) };
             setClients((prev) => (prev.some((c) => c.id === incoming.id) ? prev : [...prev, incoming]));
           }
           if (payload.eventType === "UPDATE") {
-            const incoming = { id: payload.new.id, ...(payload.new.data || {}) };
+            const incoming = { id: payload.new.id, portefeuilleId: payload.new.portefeuille_id, ...(payload.new.data || {}) };
             setClients((prev) => prev.map((c) => (c.id === incoming.id ? incoming : c)));
           }
           if (payload.eventType === "DELETE") {
@@ -483,20 +487,57 @@ function CabinetApp({ session, onLogout }) {
           }
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "portefeuilles" },
+        (payload) => {
+          const id = payload.new?.id ?? payload.old?.id;
+          if (id && pendingLocalPortefeuilleIds.current.has(id)) {
+            pendingLocalPortefeuilleIds.current.delete(id);
+            return;
+          }
+          if (payload.eventType === "INSERT") {
+            const incoming = payload.new;
+            setPortefeuilles((prev) => (prev.some((p) => p.id === incoming.id) ? prev : [...prev, incoming]));
+          }
+          if (payload.eventType === "UPDATE") {
+            const incoming = payload.new;
+            setPortefeuilles((prev) => prev.map((p) => (p.id === incoming.id ? incoming : p)));
+          }
+          if (payload.eventType === "DELETE") {
+            setPortefeuilles((prev) => prev.filter((p) => p.id !== payload.old.id));
+          }
+        }
+      )
       .subscribe((status) => {
         // Reconnexion automatique + re-synchronisation si la connexion WebSocket tombe
         // (veille du poste, coupure réseau…) : on récupère alors ce qui a pu être manqué
         // pendant la coupure, pour rester à jour sans que l'utilisateur ait à recharger.
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          Promise.all([loadClientsFromSupabase(), loadTeamFromSupabase()]).then(([c, t]) => {
+          Promise.all([loadClientsFromSupabase(), loadTeamFromSupabase(), loadPortefeuillesFromSupabase()]).then(([c, t, p]) => {
             if (c) setClients(migrateClients(c));
             if (t) setTeam(t);
+            if (p) setPortefeuilles(p);
           });
         }
       });
 
     return () => { supabase.removeChannel(channel); };
   }, []);
+
+  /* ---- Identité : plus de sélection manuelle ("qui consulte le dossier ?").
+     Le compte connecté (session Supabase Auth) est automatiquement relié à SA
+     fiche "team" via auth_user_id (voir trigger handle_new_user). "me" reste le
+     nom affiché, utilisé partout ailleurs dans l'app pour filtrer "mes dossiers". ---- */
+  const myRow = useMemo(() => {
+    if (!team || !session?.user?.id) return null;
+    return team.find((t) => t.auth_user_id === session.user.id) || null;
+  }, [team, session]);
+  const me = myRow?.nom || null;
+  const myRole = myRow?.role || null;
+  const myPortefeuilleId = myRow?.portefeuille_id || null;
+  const isAdmin = myRole === "admin";
+  const canManageTeam = isAdmin || myRole === "expert" || myRole === "chef_mission";
 
   // Pour les opérations qui touchent plusieurs clients d'un coup (renommage/suppression d'un collaborateur)
   const persistMany = useCallback((clientsToSave) => {
@@ -591,13 +632,14 @@ function CabinetApp({ session, onLogout }) {
       persistMany(next);
       return next;
     });
-    if (me === oldName) { setMe(newName); saveMe(newName); }
-  }, [team, persistMany, me]);
+  }, [team, persistMany]);
 
-  const addTeamMember = useCallback((nom) => {
+  // Ajout manuel réservé à l'Admin (les collaborateurs rejoignent normalement en s'inscrivant eux-mêmes) :
+  // utile pour un contact externe sans compte, ou pour dépanner.
+  const addTeamMember = useCallback((nom, portefeuilleId, role) => {
     if (!nom.trim() || team.some((t) => t.nom === nom.trim())) return;
     const color = PALETTE[team.length % PALETTE.length];
-    const member = { id: `t-${Date.now()}`, nom: nom.trim(), color };
+    const member = { id: `t-${Date.now()}`, nom: nom.trim(), color, role: role || "collaborateur", statut: "actif", portefeuille_id: portefeuilleId || null };
     setTeam((prev) => [...prev, member]);
     pendingLocalTeamIds.current.add(member.id);
     insertTeamMemberRemote(member);
@@ -621,6 +663,26 @@ function CabinetApp({ session, onLogout }) {
       return next;
     });
   }, [team, persistMany]);
+
+  // Modification générique d'une fiche équipe : rôle, portefeuille, validation d'une
+  // demande en attente (statut -> actif). Réservé côté base aux Experts/Chefs de
+  // mission (sur leur propre portefeuille) et à l'Admin (partout) — voir RLS "team_update".
+  const updateTeamMember = useCallback((id, patch) => {
+    setTeam((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    pendingLocalTeamIds.current.add(id);
+    updateTeamMemberRemote(id, patch);
+  }, []);
+
+  // Création d'un nouveau portefeuille (nouveau cabinet client de l'outil) : réservé à l'Admin.
+  const addPortefeuille = useCallback((nom, domaine) => {
+    if (!nom.trim()) return null;
+    const id = `pf-${Date.now()}`;
+    const p = { id, nom: nom.trim(), domaine: domaine?.trim() ? domaine.trim().toLowerCase() : null };
+    setPortefeuilles((prev) => [...prev, p]);
+    pendingLocalPortefeuilleIds.current.add(id);
+    insertPortefeuilleRemote(p);
+    return id;
+  }, []);
 
   const myClients = useMemo(() => {
     if (!clients || !me) return [];
@@ -647,7 +709,17 @@ function CabinetApp({ session, onLogout }) {
       </div>
     );
   }
-  if (!me) return <WelcomeGate team={team} onPick={(n) => { setMe(n); saveMe(n); }} />;
+  if (!myRow) {
+    return (
+      <AccountSyncScreen
+        onRetry={() => { setLoading(true); loadTeamFromSupabase().then((t) => { setTeam(t || []); setLoading(false); }); }}
+        onLogout={onLogout}
+      />
+    );
+  }
+  if (myRow.statut === "en_attente") {
+    return <PendingScreen row={myRow} onLogout={onLogout} />;
+  }
 
   const meColor = team.find((t) => t.nom === me)?.color || T.navy;
   const activeClient = activeClientTab ? clients.find((c) => c.id === activeClientTab) || null : null;
@@ -675,11 +747,17 @@ function CabinetApp({ session, onLogout }) {
   const goHome = () => setActiveClientTab(null);
   const navTo = (v) => { setView(v); setActiveClientTab(null); };
 
+  // Équipe "visible" pour les listes déroulantes (assigner un collaborateur/expert/chef
+  // de mission à un dossier) : uniquement les comptes actifs de mon portefeuille — l'Admin,
+  // qui n'appartient à aucun portefeuille en particulier, voit tout le monde.
+  const visibleTeam = (team || []).filter((t) => t.statut !== "en_attente" && (isAdmin || t.portefeuille_id === myPortefeuilleId));
+  const myPortefeuille = (portefeuilles || []).find((p) => p.id === myPortefeuilleId) || null;
+
   return (
     <div style={S.appShell}>
       <GlobalStyle />
-      <Sidebar view={view} setView={(v) => navTo(v)} me={me} team={team}
-        onSwitchMe={() => setMe(null)} onLogout={onLogout} counts={computeCounts(myClients)}
+      <Sidebar view={view} setView={(v) => navTo(v)} me={me} meRole={myRole} mePortefeuille={myPortefeuille} team={team}
+        onLogout={onLogout} counts={computeCounts(myClients)}
         collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
       <div style={S.main}>
         <TopBar search={search} setSearch={setSearch} saveStatus={saveStatus} me={me} meColor={meColor}
@@ -694,7 +772,7 @@ function CabinetApp({ session, onLogout }) {
             // interne (onglet secondaire "Infos / TVA / Bilan…") sont ainsi réinitialisés
             // avec les données du dossier sélectionné, au lieu de rester figés sur
             // l'ancien dossier affiché.
-            <ClientEditorPage key={activeClient.id} client={activeClient} team={team} onUpdate={updateClient}
+            <ClientEditorPage key={activeClient.id} client={activeClient} team={visibleTeam} onUpdate={updateClient}
               onClose={() => closeClientTab(activeClient.id)} />
           ) : (
             <>
@@ -703,7 +781,7 @@ function CabinetApp({ session, onLogout }) {
                   onOpenClient={(id) => { navTo("clients"); openClientTab(id); }} setView={navTo} />
               )}
               {view === "clients" && (
-                <ClientsRegistry clients={myClients} allClients={clients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter}
+                <ClientsRegistry clients={myClients} allClients={clients} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter}
                   regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter} me={me}
                   selected={activeClientTab} setSelected={openClientTab} onAdd={() => setShowAddClient(true)}
                   onUpdate={updateClient} onImport={importClients} />
@@ -719,14 +797,20 @@ function CabinetApp({ session, onLogout }) {
               {view === "regimes" && <RegimeChangeView clients={myClients} me={me} search={search} onUpdate={updateClient} />}
               {view === "fiscal" && <SuiviFiscalView clients={myClients} team={team} />}
               {view === "planning" && <PlanningView tasks={myTasks} me={me} />}
-              {view === "equipe" && <EquipeView team={team} clients={clients} onAdd={addTeamMember} onRename={renameTeamMember} onDelete={deleteTeamMember} />}
+              {view === "equipe" && (
+                <EquipeView team={team} portefeuilles={portefeuilles || []} clients={clients}
+                  myRole={myRole} isAdmin={isAdmin} myPortefeuilleId={myPortefeuilleId}
+                  canManageTeam={canManageTeam}
+                  onAdd={addTeamMember} onRename={renameTeamMember} onDelete={deleteTeamMember}
+                  onUpdateMember={updateTeamMember} onAddPortefeuille={addPortefeuille} />
+              )}
             </>
           )}
         </div>
       </div>
 
       {showAddClient && (
-        <AddClientModal team={team} me={me} onClose={() => setShowAddClient(false)}
+        <AddClientModal team={visibleTeam} me={me} portefeuilleId={myPortefeuilleId} onClose={() => setShowAddClient(false)}
           onCreate={(c) => { addClient(c); setShowAddClient(false); setOpenClientTabs((prev) => [...prev, { id: c.id, label: c.nom }]); setActiveClientTab(c.id); }} />
       )}
       <SaveToast status={saveStatus} />
@@ -794,6 +878,8 @@ function AuthPage() {
   const [mode, setMode] = useState("login"); // login | signup
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [telephone, setTelephone] = useState("");
+  const [cabinetNom, setCabinetNom] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -808,7 +894,7 @@ function AuthPage() {
         if (err) throw err;
       } else {
         const { data, error: err } = await supabase.auth.signUp({
-          email, password, options: { data: { full_name: fullName } },
+          email, password, options: { data: { full_name: fullName, telephone, cabinet_nom: cabinetNom } },
         });
         if (err) throw err;
         if (!data.session) {
@@ -870,6 +956,28 @@ function AuthPage() {
               <input required type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vous@cabinet.fr" style={authInputStyle} />
             </div>
           </div>
+          {mode === "signup" && (
+            <div>
+              <label style={authLabelStyle}>Téléphone</label>
+              <div style={{ position: "relative" }}>
+                <Phone size={15} style={authIconStyle} />
+                <input required type="tel" value={telephone} onChange={(e) => setTelephone(e.target.value)} placeholder="06 12 34 56 78" style={authInputStyle} />
+              </div>
+            </div>
+          )}
+          {mode === "signup" && (
+            <div>
+              <label style={authLabelStyle}>Nom du cabinet</label>
+              <div style={{ position: "relative" }}>
+                <Briefcase size={15} style={authIconStyle} />
+                <input value={cabinetNom} onChange={(e) => setCabinetNom(e.target.value)} placeholder="ex. Cabinet Dupont & Associés" style={authInputStyle} />
+              </div>
+              <div style={{ fontSize: 10.5, color: T.inkMuted, marginTop: 5, lineHeight: 1.5 }}>
+                Si votre cabinet a déjà un accès (@axe-experts.com, @kof-experts.com), votre compte sera activé immédiatement.
+                Sinon, cette information nous sert à vous recontacter pour activer votre accès.
+              </div>
+            </div>
+          )}
           <div>
             <label style={authLabelStyle}>Mot de passe</label>
             <div style={{ position: "relative" }}>
@@ -926,6 +1034,15 @@ function GlobalStyle() {
       button { transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease, opacity .15s ease, border-color .15s ease; }
       button.clickable:hover, div.clickable:hover { transform: translateY(-1px); }
       button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 2px solid ${T.navy}; outline-offset: 2px; }
+      .filterField { border: 1px solid ${T.line}; background: ${T.card}; transition: border-color .15s ease, box-shadow .15s ease; }
+      .filterField:hover { border-color: ${T.navy}; }
+      .filterField:focus, .filterField:focus-visible { border-color: ${T.navy}; box-shadow: 0 0 0 3px ${T.navySoft}; outline: none; }
+      .sideGroupHeader { transition: color .15s ease; cursor: pointer; }
+      .sideGroupHeader:hover { color: #fff !important; }
+      .sideNavItem { transition: background-color .15s ease, color .15s ease; }
+      .sideNavItem:hover { background: ${T.sidebarBg2} !important; color: #fff !important; }
+      .statusToggle { transition: background-color .15s ease, color .15s ease, border-color .15s ease; cursor: pointer; }
+      .statusToggle:hover { filter: brightness(0.96); }
       @keyframes fadeInUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
       .reveal { animation: fadeInUp .55s cubic-bezier(.16,.84,.44,1) both; }
       @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
@@ -959,38 +1076,50 @@ function Reveal({ children, index = 0, delay = 0, style, ...rest }) {
 }
 
 /* ============================================================
-   WELCOME GATE
+   ACCOUNT SYNC SCREEN — cas rare où la fiche "team" (créée par le
+   trigger à l'inscription) n'est pas encore visible côté client.
    ============================================================ */
-function WelcomeGate({ team, onPick }) {
+function AccountSyncScreen({ onRetry, onLogout }) {
   return (
-    <div style={{ ...S.appShell, alignItems: "center", justifyContent: "center", flexDirection: "column", background: `radial-gradient(circle at 20% 15%, ${T.navySoft} 0%, ${T.paper} 45%), radial-gradient(circle at 85% 85%, #F1F5F9 0%, ${T.paper} 40%)` }}>
+    <div style={{ ...S.appShell, alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16, background: `radial-gradient(circle at 20% 15%, ${T.navySoft} 0%, ${T.paper} 45%), radial-gradient(circle at 85% 85%, #F1F5F9 0%, ${T.paper} 40%)` }}>
       <GlobalStyle />
-      <Reveal style={{ textAlign: "center", maxWidth: 440, padding: 36, background: T.card, borderRadius: T.radiusLg, boxShadow: T.shadowLg, border: `1px solid ${T.line}` }}>
-        <div style={{ width: 44, height: 44, borderRadius: 14, background: T.navy, margin: "0 auto 16px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <LayoutGrid size={20} color="#fff" strokeWidth={2.2} />
-        </div>
-        <div style={{ fontFamily: T.mono, fontSize: 11, letterSpacing: "0.18em", color: T.navy, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>AXE-EXPERTS</div>
-        <h1 style={{ fontFamily: T.serif, fontWeight: 700, fontSize: 20, margin: "0 0 8px", color: T.ink }}>Qui consulte le dossier ?</h1>
-        <p style={{ color: T.inkMuted, fontSize: 12.5, lineHeight: 1.6, marginBottom: 26 }}>
-          Chacun ne voit que ses propres dossiers (en tant que collaborateur, expert ou chef de mission).
+      <Reveal style={{ textAlign: "center", maxWidth: 420, padding: 36, background: T.card, borderRadius: T.radiusLg, boxShadow: T.shadowLg, border: `1px solid ${T.line}` }}>
+        <Loader2 size={26} color={T.navy} className="spin" style={{ marginBottom: 14 }} />
+        <h1 style={{ fontFamily: T.serif, fontWeight: 700, fontSize: 17, margin: "0 0 8px", color: T.ink }}>Finalisation de votre compte…</h1>
+        <p style={{ color: T.inkMuted, fontSize: 12.5, lineHeight: 1.6, marginBottom: 22 }}>
+          Votre fiche collaborateur est en cours de création. Si ça persiste plus de quelques secondes, réessayez.
         </p>
-        <div style={{ display: "grid", gap: 10 }}>
-          {team.map((t, i) => (
-            <Reveal key={t.id} index={i} delay={0.15}>
-              <button onClick={() => onPick(t.nom)} className="clickable" style={{
-                display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderRadius: 14,
-                border: `1.5px solid ${T.line}`, background: T.paper, cursor: "pointer", fontSize: 13, fontWeight: 600, color: T.ink, textAlign: "left", width: "100%",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.color; e.currentTarget.style.background = T.card; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = T.line; e.currentTarget.style.background = T.paper; }}
-            >
-              <span style={{ width: 30, height: 30, borderRadius: "50%", background: t.color, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontFamily: T.serif, fontWeight: 700, fontSize: 12.5 }}>{t.nom?.[0]}</span>
-              {t.nom}
-              <ChevronRight size={16} style={{ marginLeft: "auto", color: T.inkMuted }} />
-              </button>
-            </Reveal>
-          ))}
+        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+          <button onClick={onRetry} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: T.navy, color: "#fff", cursor: "pointer", fontSize: 12.5, fontWeight: 700 }}>Réessayer</button>
+          <button onClick={onLogout} style={{ padding: "9px 16px", borderRadius: 10, border: `1px solid ${T.line}`, background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: T.inkMuted }}>Déconnexion</button>
         </div>
+        <style>{`.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </Reveal>
+    </div>
+  );
+}
+
+/* ============================================================
+   PENDING SCREEN — compte inscrit avec un email dont le domaine
+   n'est rattaché à aucun portefeuille connu : en attente de
+   validation par l'Admin (démarchage / devis / création manuelle).
+   ============================================================ */
+function PendingScreen({ row, onLogout }) {
+  return (
+    <div style={{ ...S.appShell, alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16, background: `radial-gradient(circle at 20% 15%, ${T.amberSoft} 0%, ${T.paper} 45%), radial-gradient(circle at 85% 85%, #F1F5F9 0%, ${T.paper} 40%)` }}>
+      <GlobalStyle />
+      <Reveal style={{ textAlign: "center", maxWidth: 460, padding: 36, background: T.card, borderRadius: T.radiusLg, boxShadow: T.shadowLg, border: `1px solid ${T.line}` }}>
+        <div style={{ width: 44, height: 44, borderRadius: 14, background: T.amber, margin: "0 auto 16px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Clock size={20} color="#fff" strokeWidth={2.2} />
+        </div>
+        <h1 style={{ fontFamily: T.serif, fontWeight: 700, fontSize: 18, margin: "0 0 8px", color: T.ink }}>Inscription en attente de validation</h1>
+        <p style={{ color: T.inkMuted, fontSize: 12.5, lineHeight: 1.7, marginBottom: 10 }}>
+          Merci {row.nom} — votre adresse <strong>{row.email}</strong> n'est pas encore rattachée à un cabinet sur cet outil.
+        </p>
+        <p style={{ color: T.inkMuted, fontSize: 12.5, lineHeight: 1.7, marginBottom: 22 }}>
+          Notre équipe va prendre contact avec vous prochainement pour échanger sur votre cabinet et activer votre accès.
+        </p>
+        <button onClick={onLogout} style={{ padding: "9px 18px", borderRadius: 10, border: `1px solid ${T.line}`, background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: T.inkMuted }}>Déconnexion</button>
       </Reveal>
     </div>
   );
@@ -999,73 +1128,133 @@ function WelcomeGate({ team, onPick }) {
 /* ============================================================
    SIDEBAR
    ============================================================ */
-function Sidebar({ view, setView, me, team, onSwitchMe, onLogout, counts, collapsed, setCollapsed }) {
-  const items = [
-    { id: "dashboard", label: "Vue d'ensemble", icon: LayoutGrid },
-    { id: "clients", label: "Registre clients", icon: Users, badge: counts.total },
-    { id: "tva", label: "TVA — CA3/CA12", icon: Receipt, badge: counts.tvaAlert, badgeTone: "amber" },
-    { id: "bilans", label: "Bilans", icon: FileWarning, badge: counts.bilanRetard, badgeTone: "red" },
-    { id: "acomptes", label: "Acomptes IS / CFE", icon: Landmark },
-    { id: "age", label: "AGE / AGO", icon: Building2, badge: counts.ageAlert, badgeTone: "amber" },
-    { id: "mission", label: "Dossiers en accueil", icon: ClipboardCheck, badge: counts.missionIncomplete, badgeTone: "amber" },
-    { id: "regimes", label: "Changements de régime", icon: RefreshCw },
-    { id: "fiscal", label: "Suivi fiscal", icon: CalendarDays },
-    { id: "planning", label: "Mon planning", icon: CalendarRange },
-    { id: "equipe", label: "Équipe", icon: Settings2 },
+function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, counts, collapsed, setCollapsed }) {
+  const GROUPS = [
+    {
+      id: "clients-accueil", label: "Gestion clients & accueil",
+      items: [
+        { id: "clients", label: "Registre clients", icon: Users, badge: counts.total },
+        { id: "mission", label: "Dossiers en accueil", icon: ClipboardCheck, badge: counts.missionIncomplete, badgeTone: "amber" },
+        { id: "regimes", label: "Changements de régime", icon: RefreshCw },
+      ],
+    },
+    {
+      id: "fiscalite", label: "Fiscalité & comptabilité",
+      items: [
+        { id: "tva", label: "TVA (CA3 / CA12)", icon: Receipt, badge: counts.tvaAlert, badgeTone: "amber" },
+        { id: "acomptes", label: "Impôts & cotisations", icon: Landmark },
+        { id: "bilans", label: "Bilans", icon: FileWarning, badge: counts.bilanRetard, badgeTone: "red" },
+        { id: "fiscal", label: "Suivi fiscal", icon: CalendarDays },
+      ],
+    },
+    {
+      id: "juridique", label: "Juridique",
+      items: [
+        { id: "age", label: "Assemblées (AGE / AGO)", icon: Building2, badge: counts.ageAlert, badgeTone: "amber" },
+      ],
+    },
+    {
+      id: "organisation", label: "Organisation & équipe",
+      items: [
+        { id: "planning", label: "Mon planning", icon: CalendarRange },
+        { id: "equipe", label: "Équipe", icon: Settings2 },
+      ],
+    },
   ];
+  const groupOf = (v) => GROUPS.find((g) => g.items.some((it) => it.id === v))?.id;
+  const [openGroups, setOpenGroups] = useState(() => new Set([groupOf(view) || GROUPS[0].id]));
+  const toggleGroup = (id) => setOpenGroups((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  // Si on navigue (ex. depuis le Dashboard) vers un item dont le groupe est fermé, on le déplie automatiquement
+  useEffect(() => {
+    const g = groupOf(view);
+    if (g) setOpenGroups((prev) => (prev.has(g) ? prev : new Set(prev).add(g)));
+  }, [view]);
+
   const meColor = team.find((t) => t.nom === me)?.color || T.navy;
-  const W = collapsed ? 76 : 244;
+  const W = collapsed ? 76 : 258;
+
+  const NavButton = ({ it, indent }) => {
+    const active = view === it.id; const Icon = it.icon;
+    return (
+      <button onClick={() => setView(it.id)} title={it.label} className="sideNavItem" style={{
+        display: "flex", alignItems: "center", gap: 10, padding: collapsed ? "10px 0" : `9px 11px 9px ${indent ? 22 : 11}px`, borderRadius: 9, border: "none",
+        background: active ? T.sidebarActive : "transparent", color: active ? "#fff" : T.sidebarInkMuted,
+        cursor: "pointer", fontSize: 12.5, fontWeight: active ? 700 : 500, textAlign: "left", width: "100%",
+        justifyContent: collapsed ? "center" : "flex-start", position: "relative",
+      }}>
+        {active && !collapsed && <span style={{ position: "absolute", left: 0, top: 6, bottom: 6, width: 3, borderRadius: 3, background: T.sidebarAccent }} />}
+        <Icon size={15} strokeWidth={2} style={{ flexShrink: 0 }} />
+        {!collapsed && <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.label}</span>}
+        {!collapsed && !!it.badge && (
+          <span style={{
+            fontFamily: T.sans, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
+            background: it.badgeTone === "red" ? "rgba(248,113,113,0.18)" : it.badgeTone === "amber" ? "rgba(251,191,36,0.18)" : "rgba(129,140,248,0.2)",
+            color: it.badgeTone === "red" ? "#FCA5A5" : it.badgeTone === "amber" ? "#FCD34D" : T.sidebarAccent,
+          }}>{it.badge}</span>
+        )}
+      </button>
+    );
+  };
+
   return (
-    <div style={{ width: W, flexShrink: 0, background: T.sidebarBg, color: T.sidebarInk, display: "flex", flexDirection: "column", padding: "22px 12px", borderRight: `1px solid ${T.line}`, transition: "width .18s ease" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 6px 20px", marginBottom: 12, borderBottom: `1px solid ${T.line}`, justifyContent: collapsed ? "center" : "flex-start" }}>
-        <div style={{ width: 34, height: 34, borderRadius: 10, background: T.navy, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: T.serif, fontWeight: 800, color: "#fff", fontSize: 14 }}>A</div>
+    <div style={{ width: W, flexShrink: 0, background: T.sidebarBg, color: T.sidebarInk, display: "flex", flexDirection: "column", padding: "22px 12px", borderRight: `1px solid ${T.sidebarBorder}`, transition: "width .18s ease" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 6px 20px", marginBottom: 12, borderBottom: `1px solid ${T.sidebarBorder}`, justifyContent: collapsed ? "center" : "flex-start" }}>
+        <div style={{ width: 34, height: 34, borderRadius: 10, background: T.sidebarAccent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: T.serif, fontWeight: 800, color: "#0F172A", fontSize: 14 }}>A</div>
         {!collapsed && (
           <div>
-            <div style={{ fontFamily: T.serif, fontSize: 13, fontWeight: 800, letterSpacing: "0.01em", color: T.ink }}>AXE-EXPERTS</div>
-            <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.inkMuted }}>Registre &amp; Pilotage</div>
+            <div style={{ fontFamily: T.serif, fontSize: 13, fontWeight: 800, letterSpacing: "0.01em", color: "#fff" }}>AXE-EXPERTS</div>
+            <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.sidebarInkMuted }}>Registre &amp; Pilotage</div>
           </div>
         )}
-        <button onClick={() => setCollapsed(!collapsed)} title="Réduire / agrandir" style={{ marginLeft: "auto", background: "none", border: "none", color: T.inkMuted, cursor: "pointer", display: collapsed ? "none" : "flex" }}>
+        <button onClick={() => setCollapsed(!collapsed)} title="Réduire / agrandir" style={{ marginLeft: "auto", background: "none", border: "none", color: T.sidebarInkMuted, cursor: "pointer", display: collapsed ? "none" : "flex" }}>
           <ChevronLeft size={14} />
         </button>
       </div>
-      <nav className="scrollbar" style={{ display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
-        {items.map((it, i) => {
-          const active = view === it.id; const Icon = it.icon;
+      <nav className="scrollbar" style={{ display: "flex", flexDirection: "column", gap: 4, overflowY: "auto" }}>
+        <NavButton it={{ id: "dashboard", label: "Vue d'ensemble", icon: LayoutGrid }} />
+        <div style={{ height: 6 }} />
+        {GROUPS.map((g) => {
+          const isOpen = collapsed || openGroups.has(g.id);
           return (
-            <Reveal key={it.id} index={Math.min(i, 6)} transition={{ duration: 0.35, delay: i * 0.035, ease: EASE }}>
-              <button onClick={() => setView(it.id)} title={it.label} style={{
-                display: "flex", alignItems: "center", gap: 10, padding: collapsed ? "10px 0" : "9px 11px", borderRadius: 10, border: "none",
-                background: active ? T.sidebarActive : "transparent", color: active ? T.navy : T.inkSoft,
-                cursor: "pointer", fontSize: 12.5, fontWeight: active ? 700 : 500, textAlign: "left", width: "100%",
-                justifyContent: collapsed ? "center" : "flex-start",
-              }}>
-                <Icon size={16} strokeWidth={2} style={{ flexShrink: 0 }} />
-                {!collapsed && <span style={{ flex: 1 }}>{it.label}</span>}
-                {!collapsed && !!it.badge && (
-                  <span style={{
-                    fontFamily: T.sans, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
-                    background: it.badgeTone === "red" ? T.redSoft : it.badgeTone === "amber" ? T.amberSoft : T.navySoft,
-                    color: it.badgeTone === "red" ? T.red : it.badgeTone === "amber" ? T.amber : T.navy,
-                  }}>{it.badge}</span>
-                )}
-              </button>
-            </Reveal>
+            <div key={g.id}>
+              {!collapsed && (
+                <button onClick={() => toggleGroup(g.id)} className="sideGroupHeader" style={{
+                  display: "flex", alignItems: "center", gap: 6, width: "100%", background: "none", border: "none",
+                  padding: "10px 11px 6px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
+                  color: T.sidebarInkMuted,
+                }}>
+                  <span style={{ flex: 1, textAlign: "left" }}>{g.label}</span>
+                  <ChevronDown size={12} style={{ transform: isOpen ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform .15s ease" }} />
+                </button>
+              )}
+              {isOpen && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  {g.items.map((it) => <NavButton key={it.id} it={it} indent={!collapsed} />)}
+                </div>
+              )}
+              {collapsed && <div style={{ height: 6 }} />}
+            </div>
           );
         })}
       </nav>
-      <div style={{ marginTop: "auto", paddingTop: 14, borderTop: `1px solid ${T.line}`, display: "flex", flexDirection: "column", gap: 6 }}>
-        <button onClick={onSwitchMe} title="Changer de session" style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", background: T.paper, border: `1px solid ${T.line}`, cursor: "pointer", padding: collapsed ? "7px" : "8px 9px", borderRadius: 11, color: T.ink, justifyContent: collapsed ? "center" : "flex-start" }}>
+      <div style={{ marginTop: "auto", paddingTop: 14, borderTop: `1px solid ${T.sidebarBorder}`, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div title={mePortefeuille ? `Portefeuille : ${mePortefeuille.nom}` : "Aucun portefeuille"} style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", background: T.sidebarBg2, border: `1px solid ${T.sidebarBorder}`, padding: collapsed ? "7px" : "8px 9px", borderRadius: 11, color: "#fff", justifyContent: collapsed ? "center" : "flex-start" }}>
           <span style={{ width: 24, height: 24, borderRadius: "50%", background: meColor, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.serif, fontWeight: 700, fontSize: 11, color: "#fff", flexShrink: 0 }}>{me?.[0]}</span>
           {!collapsed && (
-            <div style={{ textAlign: "left" }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700 }}>{me}</div>
-              <div style={{ fontSize: 10, color: T.inkMuted }}>Changer de session</div>
+            <div style={{ textAlign: "left", overflow: "hidden" }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{me}</div>
+              <div style={{ fontSize: 10, color: T.sidebarInkMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {ROLE_LABELS[meRole] || meRole}{mePortefeuille ? ` · ${mePortefeuille.nom}` : ""}
+              </div>
             </div>
           )}
-        </button>
+        </div>
         {onLogout && (
-          <button onClick={onLogout} title="Déconnexion" style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", background: "none", border: "none", cursor: "pointer", padding: collapsed ? "7px" : "7px 9px", borderRadius: 10, color: T.red, fontSize: 11.5, fontWeight: 600, justifyContent: collapsed ? "center" : "flex-start" }}>
+          <button onClick={onLogout} title="Déconnexion" style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", background: "none", border: "none", cursor: "pointer", padding: collapsed ? "7px" : "7px 9px", borderRadius: 10, color: "#F87171", fontSize: 11.5, fontWeight: 600, justifyContent: collapsed ? "center" : "flex-start" }}>
             <LogOut size={14} />
             {!collapsed && <span>Déconnexion</span>}
           </button>
@@ -1231,8 +1420,11 @@ function filterByRole(clients, me, roleFilter) {
   if (roleFilter === "Chef de mission") return clients.filter((c) => c.chefMission === me);
   return clients;
 }
-function filterClients(clients, search, roleFilter, me, regimeFilter) {
+function filterClients(clients, search, roleFilter, me, regimeFilter, statutFilter = "actif") {
   let out = filterByRole(clients, me, roleFilter || "Tous");
+  if (statutFilter === "actif") out = out.filter((c) => (c.statutDossier || "actif") !== "inactif");
+  else if (statutFilter === "inactif") out = out.filter((c) => c.statutDossier === "inactif");
+  // statutFilter === "tous" -> pas de filtre supplémentaire
   if (regimeFilter && regimeFilter !== "Tous") out = out.filter((c) => c.tvaRegime === regimeFilter);
   if (search.trim()) {
     const q = search.trim().toLowerCase();
@@ -1260,34 +1452,47 @@ function RoleBadge({ role, name }) {
 }
 
 /* ============================================================
-   FILTER BAR (rôle + régime)
+   FILTER BAR — barre d'outils compacte sur une seule ligne
+   (recherche + rôle + régime TVA + statut du dossier)
    ============================================================ */
-function FilterBar({ roleFilter, setRoleFilter, count, regimeFilter, setRegimeFilter }) {
+const ROLE_FILTER_OPTIONS = [
+  { value: "Tous", label: "Tous les rôles" },
+  { value: "Collaborateur", label: "Collaborateur" },
+  { value: "Expert", label: "Expert" },
+  { value: "Chef de mission", label: "Chef de mission" },
+];
+const STATUT_FILTER_OPTIONS = [
+  { value: "actif", label: "Actifs uniquement" },
+  { value: "inactif", label: "Inactifs" },
+  { value: "tous", label: "Tous les dossiers" },
+];
+const filterFieldStyle = { padding: "7px 10px", borderRadius: 9, fontSize: 12, fontWeight: 600, color: T.inkSoft, background: T.card };
+
+function FilterBar({ roleFilter, setRoleFilter, count, regimeFilter, setRegimeFilter, statutFilter, setStatutFilter, search, setSearch }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <Filter size={14} color={T.inkMuted} />
-        {["Tous", "Collaborateur", "Expert", "Chef de mission"].map((r) => (
-          <button key={r} onClick={() => setRoleFilter(r)} style={{
-            padding: "6px 12px", borderRadius: 20, fontSize: 12.5, fontWeight: 600,
-            border: `1px solid ${roleFilter === r ? T.navy : T.line}`, background: roleFilter === r ? T.navy : T.card,
-            color: roleFilter === r ? "#fff" : T.inkSoft, cursor: "pointer",
-          }}>{r === "Tous" ? "Tous mes dossiers" : `Je suis ${r.toLowerCase()}`}</button>
-        ))}
-        <span style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 11.5, color: T.inkMuted }}>{count} dossier(s)</span>
-      </div>
-      {setRegimeFilter && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <Receipt size={14} color={T.inkMuted} />
-          {["Tous", ...REGIMES_TVA].map((r) => (
-            <button key={r} onClick={() => setRegimeFilter(r)} style={{
-              padding: "6px 12px", borderRadius: 999, fontSize: 12, fontWeight: 600,
-              border: `1px solid ${regimeFilter === r ? T.navy : T.line}`, background: regimeFilter === r ? T.navySoft : T.card,
-              color: regimeFilter === r ? T.navy : T.inkSoft, cursor: "pointer", fontFamily: T.mono,
-            }}>{r}</button>
-          ))}
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 16, padding: "2px 0" }}>
+      {setSearch && (
+        <div style={{ position: "relative", flex: "1 1 200px", minWidth: 160, maxWidth: 260 }}>
+          <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.inkMuted }} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher un dossier…"
+            className="filterField" style={{ ...filterFieldStyle, width: "100%", padding: "7px 10px 7px 30px", borderRadius: 9 }} />
         </div>
       )}
+      <select value={roleFilter || "Tous"} onChange={(e) => setRoleFilter(e.target.value)} className="filterField" style={filterFieldStyle} title="Filtrer par mon rôle">
+        {ROLE_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value === "Tous" ? o.label : `Mon rôle : ${o.label}`}</option>)}
+      </select>
+      {setRegimeFilter && (
+        <select value={regimeFilter || "Tous"} onChange={(e) => setRegimeFilter(e.target.value)} className="filterField" style={{ ...filterFieldStyle, fontFamily: T.mono }} title="Filtrer par régime TVA">
+          <option value="Tous">Régime TVA : Tous</option>
+          {REGIMES_TVA.map((r) => <option key={r} value={r}>Régime TVA : {r}</option>)}
+        </select>
+      )}
+      {setStatutFilter && (
+        <select value={statutFilter || "actif"} onChange={(e) => setStatutFilter(e.target.value)} className="filterField" style={filterFieldStyle} title="Filtrer par statut du dossier">
+          {STATUT_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>Statut : {o.label}</option>)}
+        </select>
+      )}
+      <span style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 11.5, color: T.inkMuted, whiteSpace: "nowrap" }}>{count} dossier(s)</span>
     </div>
   );
 }
@@ -1447,8 +1652,9 @@ function EmptyNote({ text }) { return <div style={{ padding: "18px 4px", color: 
 /* ============================================================
    CLIENTS REGISTRY
    ============================================================ */
-function ClientsRegistry({ clients, allClients, search, roleFilter, setRoleFilter, regimeFilter, setRegimeFilter, me, selected, setSelected, onAdd, onUpdate, onImport }) {
-  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me, regimeFilter), [clients, search, roleFilter, me, regimeFilter]);
+function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, setRoleFilter, regimeFilter, setRegimeFilter, me, selected, setSelected, onAdd, onUpdate, onImport }) {
+  const [statutFilter, setStatutFilter] = useState("actif");
+  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me, regimeFilter, statutFilter), [clients, search, roleFilter, me, regimeFilter, statutFilter]);
   const grouped = useMemo(() => {
     const g = {};
     [...filtered].sort((a, b) => a.nom.localeCompare(b.nom)).forEach((c) => {
@@ -1513,7 +1719,8 @@ function ClientsRegistry({ clients, allClients, search, roleFilter, setRoleFilte
         )}
       </Reveal>
       <p style={{ color: T.inkMuted, fontSize: 12, marginTop: 6, marginBottom: 20 }}>Cliquez un dossier pour ouvrir sa fiche complète.</p>
-      <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter} />
+      <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter}
+        statutFilter={statutFilter} setStatutFilter={setStatutFilter} search={search} setSearch={setSearch} />
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1.3fr 40px", padding: "0 18px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: T.inkMuted, fontWeight: 600, marginBottom: 10 }}>
         <div>Dossier</div><div>SIREN</div><div>Rôles</div><div>Clôture</div><div>Régime</div><div>Statuts</div><div />
@@ -1531,8 +1738,12 @@ function ClientsRegistry({ clients, allClients, search, roleFilter, setRoleFilte
                       display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1.3fr 40px", padding: "14px 18px", alignItems: "center", fontSize: 12,
                       borderRadius: T.radiusSm, border: `1px solid ${selected === c.id ? T.navy : T.line}`,
                       background: selected === c.id ? T.navySoft : T.card, boxShadow: T.shadowSm,
+                      opacity: c.statutDossier === "inactif" ? 0.55 : 1,
                     }}>
-                      <div style={{ fontWeight: 600, color: T.ink }}>{c.nom}</div>
+                      <div style={{ fontWeight: 600, color: T.ink, display: "flex", alignItems: "center", gap: 8 }}>
+                        {c.nom}
+                        {c.statutDossier === "inactif" && <Stamped tone="neutral" small>Inactif</Stamped>}
+                      </div>
                       <div style={{ fontFamily: T.mono, fontSize: 12, color: T.inkMuted }}>{c.siren}</div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 1, fontSize: 10.5, color: T.inkMuted }}>
                         {c.collab === me && <span>Collaborateur</span>}
@@ -1592,6 +1803,18 @@ function ClientEditorPage({ client, team, onUpdate, onClose }) {
               <RoleBadge role="Expert" name={client.expert} />
               <RoleBadge role="Chef de mission" name={client.chefMission} />
               {client.tvaRegime && <span style={{ fontFamily: T.mono, fontSize: 11, color: T.navy, fontWeight: 700, background: T.navySoft, padding: "2px 9px", borderRadius: 999 }}>{client.tvaRegime}</span>}
+              <button
+                onClick={() => onUpdate(client.id, { statutDossier: client.statutDossier === "inactif" ? "actif" : "inactif" })}
+                className="statusToggle"
+                title="Basculer le statut du dossier"
+                style={{
+                  display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, padding: "3px 10px 3px 8px", borderRadius: 999, border: "none",
+                  background: client.statutDossier === "inactif" ? T.paperDeep : T.greenSoft,
+                  color: client.statutDossier === "inactif" ? T.inkMuted : T.green,
+                }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: client.statutDossier === "inactif" ? T.inkMuted : T.green, flexShrink: 0 }} />
+                {client.statutDossier === "inactif" ? "Inactif" : "Actif"}
+              </button>
             </div>
           </div>
           <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${T.line}`, borderRadius: 9, padding: "7px 12px", cursor: "pointer", color: T.inkMuted, fontSize: 12 }}>
@@ -2304,48 +2527,225 @@ function PlanningView({ tasks, me }) {
 }
 
 /* ============================================================
-   ÉQUIPE
+   ÉQUIPE — rôles, portefeuilles (cabinets), demandes en attente.
+   L'affectation d'un portefeuille / rôle est réservée aux comptes
+   Expert, Chef de mission (sur leur propre portefeuille) et Admin
+   (partout) — appliqué à la fois ici (UI) et côté base (RLS).
    ============================================================ */
-function EquipeView({ team, clients, onAdd, onRename, onDelete }) {
+function EquipeView({ team, portefeuilles, clients, myRole, isAdmin, myPortefeuilleId, canManageTeam, onAdd, onRename, onDelete, onUpdateMember, onAddPortefeuille }) {
   const [newName, setNewName] = useState("");
+  const [newRole, setNewRole] = useState("collaborateur");
+  const [newPortefeuille, setNewPortefeuille] = useState(myPortefeuilleId || "");
   const [editing, setEditing] = useState(null);
   const [editValue, setEditValue] = useState("");
+  const [pfNom, setPfNom] = useState("");
+  const [pfDomaine, setPfDomaine] = useState("");
+  const [validating, setValidating] = useState(null); // id de la demande en cours de validation
+  const [validatePortefeuille, setValidatePortefeuille] = useState("");
+  const [validateNewPf, setValidateNewPf] = useState(false);
+  const [validateNewPfNom, setValidateNewPfNom] = useState("");
+  const [validateNewPfDomaine, setValidateNewPfDomaine] = useState("");
+  const [validateRole, setValidateRole] = useState("collaborateur");
 
   const countFor = (nom) => clients.filter((c) => c.collab === nom || c.expert === nom || c.chefMission === nom).length;
+  const portefeuilleName = (id) => portefeuilles.find((p) => p.id === id)?.nom || "—";
+
+  const pending = team.filter((t) => t.statut === "en_attente");
+  const activeTeam = team.filter((t) => t.statut !== "en_attente");
+  // Regroupement par portefeuille (utile surtout pour l'Admin, qui voit tous les cabinets)
+  const groups = useMemo(() => {
+    const byId = new Map();
+    activeTeam.forEach((t) => {
+      const key = t.portefeuille_id || "—";
+      if (!byId.has(key)) byId.set(key, []);
+      byId.get(key).push(t);
+    });
+    return Array.from(byId.entries());
+  }, [activeTeam]);
+
+  const startValidation = (row) => {
+    setValidating(row.id);
+    setValidatePortefeuille(portefeuilles[0]?.id || "");
+    setValidateNewPf(false);
+    setValidateNewPfNom(row.cabinet_nom || "");
+    setValidateNewPfDomaine("");
+    setValidateRole("collaborateur");
+  };
+
+  const confirmValidation = (row) => {
+    if (validateNewPf) {
+      if (!validateNewPfNom.trim()) return;
+      const id = onAddPortefeuille(validateNewPfNom, validateNewPfDomaine);
+      onUpdateMember(row.id, { portefeuille_id: id, role: validateRole, statut: "actif" });
+    } else {
+      if (!validatePortefeuille) return;
+      onUpdateMember(row.id, { portefeuille_id: validatePortefeuille, role: validateRole, statut: "actif" });
+    }
+    setValidating(null);
+  };
 
   return (
     <div>
       <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Équipe</h1></Reveal>
-      <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18 }}>Gérez les collaborateurs, experts et chefs de mission du cabinet.</p>
+      <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18 }}>
+        {isAdmin ? "Gérez les portefeuilles (cabinets), les rôles et les demandes d'accès." : "Rôles et affectations de votre cabinet."}
+      </p>
 
-      <Panel title="Ajouter un membre">
-        <div style={{ display: "flex", gap: 8 }}>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nom du collaborateur" style={{ ...inputStyle, flex: 1 }} onKeyDown={(e) => e.key === "Enter" && (onAdd(newName), setNewName(""))} />
-          <button onClick={() => { onAdd(newName); setNewName(""); }} style={{ display: "flex", alignItems: "center", gap: 6, background: T.navy, color: "#fff", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-            <Plus size={15} /> Ajouter
-          </button>
+      {!canManageTeam && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: T.inkMuted, background: T.paper, border: `1px solid ${T.line}`, borderRadius: 12, padding: "10px 14px", marginBottom: 16 }}>
+          <ShieldAlert size={15} />
+          Seuls les Experts et Chefs de mission peuvent modifier les rôles et affecter des portefeuilles.
         </div>
-      </Panel>
+      )}
 
-      <div style={{ height: 16 }} />
-      <Panel title={`Membres de l'équipe (${team.length})`}>
-        {team.map((t) => (
-          <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 4px", borderBottom: `1px solid ${T.line}` }}>
-            <span style={{ width: 26, height: 26, borderRadius: "50%", background: t.color, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.serif, fontWeight: 600, fontSize: 12, color: "#fff", flexShrink: 0 }}>{t.nom[0]}</span>
-            {editing === t.id ? (
-              <input value={editValue} onChange={(e) => setEditValue(e.target.value)} autoFocus
-                onBlur={() => { onRename(t.nom, editValue); setEditing(null); }}
-                onKeyDown={(e) => { if (e.key === "Enter") { onRename(t.nom, editValue); setEditing(null); } }}
-                style={{ ...inputStyle, flex: 1 }} />
-            ) : (
-              <span style={{ flex: 1, fontWeight: 600, fontSize: 12.5 }}>{t.nom}</span>
-            )}
-            <span style={{ fontFamily: T.mono, fontSize: 11, color: T.inkMuted }}>{countFor(t.nom)} dossier(s)</span>
-            <button onClick={() => { setEditing(t.id); setEditValue(t.nom); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.inkMuted }}><Pencil size={14} /></button>
-            <button onClick={() => { if (confirm(`Supprimer ${t.nom} de l'équipe ? Ses dossiers seront désassignés.`)) onDelete(t.nom); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.red }}><Trash2 size={14} /></button>
-          </div>
-        ))}
-      </Panel>
+      {isAdmin && pending.length > 0 && (
+        <>
+          <Panel title={`Demandes en attente (${pending.length})`}>
+            {pending.map((row) => (
+              <div key={row.id} style={{ padding: "12px 4px", borderBottom: `1px solid ${T.line}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <span style={{ width: 26, height: 26, borderRadius: "50%", background: row.color, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.serif, fontWeight: 600, fontSize: 12, color: "#fff", flexShrink: 0 }}>{row.nom?.[0]}</span>
+                  <div style={{ flex: 1, minWidth: 160 }}>
+                    <div style={{ fontWeight: 700, fontSize: 12.5 }}>{row.nom}</div>
+                    <div style={{ fontSize: 11, color: T.inkMuted }}>{row.email}{row.telephone ? ` · ${row.telephone}` : ""}{row.cabinet_nom ? ` · ${row.cabinet_nom}` : ""}</div>
+                  </div>
+                  {validating !== row.id && (
+                    <button onClick={() => startValidation(row)} style={{ background: T.navy, color: "#fff", border: "none", borderRadius: 9, padding: "7px 14px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>Valider l'accès</button>
+                  )}
+                </div>
+                {validating === row.id && (
+                  <div style={{ marginTop: 10, padding: 12, background: T.paper, borderRadius: 12, display: "grid", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5 }}>
+                        <input type="radio" checked={!validateNewPf} onChange={() => setValidateNewPf(false)} /> Portefeuille existant
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5 }}>
+                        <input type="radio" checked={validateNewPf} onChange={() => setValidateNewPf(true)} /> Nouveau portefeuille
+                      </label>
+                    </div>
+                    {!validateNewPf ? (
+                      <select value={validatePortefeuille} onChange={(e) => setValidatePortefeuille(e.target.value)} style={inputStyle}>
+                        {portefeuilles.map((p) => <option key={p.id} value={p.id}>{p.nom}{p.domaine ? ` (${p.domaine})` : ""}</option>)}
+                      </select>
+                    ) : (
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <input placeholder="Nom du cabinet" value={validateNewPfNom} onChange={(e) => setValidateNewPfNom(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                        <input placeholder="Domaine email (ex. cabinet.fr)" value={validateNewPfDomaine} onChange={(e) => setValidateNewPfDomaine(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                      </div>
+                    )}
+                    <select value={validateRole} onChange={(e) => setValidateRole(e.target.value)} style={inputStyle}>
+                      <option value="collaborateur">Collaborateur</option>
+                      <option value="expert">Expert</option>
+                      <option value="chef_mission">Chef de mission</option>
+                    </select>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button onClick={() => setValidating(null)} style={{ padding: "7px 12px", borderRadius: 9, border: `1px solid ${T.line}`, background: "none", cursor: "pointer", fontSize: 11.5 }}>Annuler</button>
+                      <button onClick={() => confirmValidation(row)} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: T.green, color: "#fff", cursor: "pointer", fontSize: 11.5, fontWeight: 700 }}>Confirmer</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </Panel>
+          <div style={{ height: 16 }} />
+        </>
+      )}
+
+      {isAdmin && (
+        <>
+          <Panel title="Portefeuilles (cabinets)">
+            {portefeuilles.map((p) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 4px", borderBottom: `1px solid ${T.line}` }}>
+                <Wallet size={15} color={T.navy} style={{ flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 12.5 }}>{p.nom}</div>
+                  {p.domaine && <div style={{ fontSize: 11, color: T.inkMuted }}>@{p.domaine}</div>}
+                </div>
+                <span style={{ fontFamily: T.mono, fontSize: 11, color: T.inkMuted }}>{activeTeam.filter((t) => t.portefeuille_id === p.id).length} membre(s)</span>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <input placeholder="Nom du nouveau cabinet" value={pfNom} onChange={(e) => setPfNom(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+              <input placeholder="Domaine email (ex. cabinet.fr)" value={pfDomaine} onChange={(e) => setPfDomaine(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+              <button onClick={() => { if (pfNom.trim()) { onAddPortefeuille(pfNom, pfDomaine); setPfNom(""); setPfDomaine(""); } }} style={{ display: "flex", alignItems: "center", gap: 6, background: T.navy, color: "#fff", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                <Plus size={15} /> Créer
+              </button>
+            </div>
+          </Panel>
+          <div style={{ height: 16 }} />
+        </>
+      )}
+
+      {isAdmin && (
+        <>
+          <Panel title="Ajouter un membre manuellement">
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nom du collaborateur" style={{ ...inputStyle, flex: 1, minWidth: 160 }} />
+              <select value={newRole} onChange={(e) => setNewRole(e.target.value)} style={inputStyle}>
+                <option value="collaborateur">Collaborateur</option>
+                <option value="expert">Expert</option>
+                <option value="chef_mission">Chef de mission</option>
+              </select>
+              <select value={newPortefeuille} onChange={(e) => setNewPortefeuille(e.target.value)} style={inputStyle}>
+                <option value="">Aucun portefeuille</option>
+                {portefeuilles.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+              </select>
+              <button onClick={() => { onAdd(newName, newPortefeuille, newRole); setNewName(""); }} style={{ display: "flex", alignItems: "center", gap: 6, background: T.navy, color: "#fff", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                <Plus size={15} /> Ajouter
+              </button>
+            </div>
+            <div style={{ fontSize: 10.5, color: T.inkMuted, marginTop: 8 }}>Réservé aux entrées sans compte (contact externe, dépannage) — les collaborateurs rejoignent normalement en s'inscrivant eux-mêmes.</div>
+          </Panel>
+          <div style={{ height: 16 }} />
+        </>
+      )}
+
+      {groups.map(([pfId, members]) => (
+        <React.Fragment key={pfId}>
+          <Panel title={isAdmin ? `${portefeuilleName(pfId)} (${members.length})` : `Membres de l'équipe (${members.length})`}>
+            {members.map((t) => (
+              <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 4px", borderBottom: `1px solid ${T.line}`, flexWrap: "wrap" }}>
+                <span style={{ width: 26, height: 26, borderRadius: "50%", background: t.color, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.serif, fontWeight: 600, fontSize: 12, color: "#fff", flexShrink: 0 }}>{t.nom?.[0]}</span>
+                {editing === t.id ? (
+                  <input value={editValue} onChange={(e) => setEditValue(e.target.value)} autoFocus
+                    onBlur={() => { onRename(t.nom, editValue); setEditing(null); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { onRename(t.nom, editValue); setEditing(null); } }}
+                    style={{ ...inputStyle, flex: 1, minWidth: 120 }} />
+                ) : (
+                  <div style={{ flex: 1, minWidth: 120 }}>
+                    <span style={{ fontWeight: 600, fontSize: 12.5 }}>{t.nom}</span>
+                    {t.email && <div style={{ fontSize: 10.5, color: T.inkMuted }}>{t.email}</div>}
+                  </div>
+                )}
+                {canManageTeam ? (
+                  <select value={t.role || "collaborateur"} onChange={(e) => onUpdateMember(t.id, { role: e.target.value })} style={{ ...inputStyle, padding: "6px 10px", fontSize: 11.5 }}>
+                    <option value="collaborateur">Collaborateur</option>
+                    <option value="expert">Expert</option>
+                    <option value="chef_mission">Chef de mission</option>
+                    {t.role === "admin" && <option value="admin">Admin</option>}
+                  </select>
+                ) : (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: T.navy, background: T.navySoft, padding: "3px 9px", borderRadius: 999 }}>{ROLE_LABELS[t.role] || t.role}</span>
+                )}
+                {isAdmin && (
+                  <select value={t.portefeuille_id || ""} onChange={(e) => onUpdateMember(t.id, { portefeuille_id: e.target.value || null })} style={{ ...inputStyle, padding: "6px 10px", fontSize: 11.5 }}>
+                    <option value="">Aucun portefeuille</option>
+                    {portefeuilles.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+                  </select>
+                )}
+                <span style={{ fontFamily: T.mono, fontSize: 11, color: T.inkMuted }}>{countFor(t.nom)} dossier(s)</span>
+                {canManageTeam && (
+                  <>
+                    <button onClick={() => { setEditing(t.id); setEditValue(t.nom); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.inkMuted }}><Pencil size={14} /></button>
+                    <button onClick={() => { if (confirm(`Supprimer ${t.nom} de l'équipe ? Ses dossiers seront désassignés.`)) onDelete(t.nom); }} style={{ background: "none", border: "none", cursor: "pointer", color: T.red }}><Trash2 size={14} /></button>
+                  </>
+                )}
+              </div>
+            ))}
+          </Panel>
+          <div style={{ height: 16 }} />
+        </React.Fragment>
+      ))}
     </div>
   );
 }
@@ -2353,7 +2753,7 @@ function EquipeView({ team, clients, onAdd, onRename, onDelete }) {
 /* ============================================================
    ADD CLIENT MODAL
    ============================================================ */
-function AddClientModal({ team, me, onClose, onCreate }) {
+function AddClientModal({ team, me, portefeuilleId, onClose, onCreate }) {
   const [nom, setNom] = useState("");
   const [siren, setSiren] = useState("");
   const [logiciel, setLogiciel] = useState("MYUNISOFT");
@@ -2366,7 +2766,7 @@ function AddClientModal({ team, me, onClose, onCreate }) {
   const submit = () => {
     if (!nom.trim()) return;
     onCreate({
-      id: `c-${Date.now()}`, nom: nom.trim(), siren: siren.trim(), logiciel, dateCloture,
+      id: `c-${Date.now()}`, portefeuilleId, statutDossier: "actif", nom: nom.trim(), siren: siren.trim(), logiciel, dateCloture,
       collab, expert, chefMission, formeJuridique: "", capital: "", activite: "",
       tvaRegime: "", tvaExig: "", tvaMois: {}, regimeHistory: [], ageAgoHistory: {},
       corporate: { kyc: { lab: false, mandat: false, choixPA: "", beneficiaireEffectif: false, beneficiaireNom: "" }, kycExtra: [], notes: "" },
