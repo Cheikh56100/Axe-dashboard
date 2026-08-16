@@ -127,6 +127,151 @@ const ACTIVITE_KEYWORDS = [
     "fabrication de produits alimentaires", "reproduction de plantes", "pepiniere", "horticulture",
   ]},
 ];
+/* ============================================================
+   CHECKLIST FORME JURIDIQUE — points annuels à ne pas oublier
+   ============================================================ */
+const FORME_JURIDIQUE_CHECKLIST_ITEMS = {
+  "SARL": [
+    { id: "gerantRemuneration", label: "Rémunération gérant majoritaire déclarée (cotisations TNS)" },
+    { id: "reserveLegale", label: "Dotation réserve légale (5%/an jusqu'à 10% du capital)" },
+    { id: "approbationComptes", label: "Approbation des comptes en AG (dans les 6 mois de la clôture)" },
+    { id: "depotGreffe", label: "Dépôt de la liasse au greffe" },
+  ],
+  "EURL": [
+    { id: "gerantRemuneration", label: "Rémunération gérant majoritaire déclarée (cotisations TNS)" },
+    { id: "reserveLegale", label: "Dotation réserve légale (5%/an jusqu'à 10% du capital)" },
+    { id: "approbationComptes", label: "Approbation des comptes (dans les 6 mois de la clôture)" },
+    { id: "depotGreffe", label: "Dépôt de la liasse au greffe" },
+  ],
+  "SAS": [
+    { id: "presidentAssimile", label: "Président assimilé-salarié (pas de cotisations TNS)" },
+    { id: "dividendesPS", label: "Prélèvements sociaux sur dividendes vérifiés" },
+    { id: "commissaireComptes", label: "Nomination CAC vérifiée si seuils dépassés" },
+    { id: "depotGreffe", label: "Dépôt de la liasse au greffe" },
+  ],
+  "SASU": [
+    { id: "presidentAssimile", label: "Président assimilé-salarié (pas de cotisations TNS)" },
+    { id: "dividendesPS", label: "Prélèvements sociaux sur dividendes vérifiés" },
+    { id: "depotGreffe", label: "Dépôt de la liasse au greffe" },
+  ],
+  "SCI": [
+    { id: "regimeIRIS", label: "Régime IR (par défaut) ou option IS documentée" },
+    { id: "coherenceHonoraires", label: "Cohérence avec la convention d'honoraires (si option IS)" },
+    { id: "approbationComptes", label: "Approbation des comptes en AG" },
+  ],
+  "SCM": [
+    { id: "quotePartCharges", label: "Répartition des charges entre associés conforme au contrat" },
+    { id: "pasBenefice", label: "Absence de bénéfice généré par la SCM vérifiée" },
+    { id: "approbationComptes", label: "Approbation des comptes en AG" },
+  ],
+  "SELARL": [
+    { id: "assuranceRCP", label: "Assurance RCP (responsabilité civile professionnelle) à jour" },
+    { id: "ordreProfessionnel", label: "Inscription à l'ordre professionnel vérifiée" },
+    { id: "capitalDetention", label: "Répartition du capital conforme aux règles de la profession" },
+    { id: "depotGreffe", label: "Dépôt de la liasse au greffe" },
+  ],
+  "EI": [
+    { id: "patrimoineAffecte", label: "Patrimoine professionnel affecté distinct du personnel (statut 2022)" },
+    { id: "optionIS", label: "Option IS (si formulée) correctement documentée" },
+  ],
+  "SA": [
+    { id: "commissaireComptes", label: "Commissaire aux comptes désigné" },
+    { id: "reserveLegale", label: "Dotation réserve légale (5%/an jusqu'à 10% du capital)" },
+    { id: "approbationComptes", label: "Approbation des comptes en AG (dans les 6 mois de la clôture)" },
+    { id: "depotGreffe", label: "Dépôt de la liasse au greffe" },
+  ],
+  "SNC": [
+    { id: "responsabiliteIndefinie", label: "Associés informés de la responsabilité indéfinie et solidaire" },
+    { id: "approbationComptes", label: "Approbation des comptes en AG" },
+  ],
+  "Association": [
+    { id: "agAnnuelle", label: "Assemblée générale annuelle tenue" },
+    { id: "budgetVote", label: "Budget voté / comptes approuvés" },
+  ],
+};
+// Complément spécifique Holding / Immobilier (affiché en plus si le secteur d'activité correspond)
+const HOLDING_CHECKLIST_ITEMS = [
+  { id: "integrationFiscale", label: "Intégration fiscale éventuelle vérifiée" },
+  { id: "regimeMereFille", label: "Régime mère-fille applicable vérifié" },
+  { id: "conventionsTresorerie", label: "Conventions de trésorerie / management fees documentées" },
+];
+/* ============================================================
+   ACTUALITÉS & AIDES PAR SECTEUR — contenu pré-rempli, éditable
+   (Expert / Chef de mission / Admin), stocké dans Supabase.
+   À vérifier et mettre à jour régulièrement : les dispositifs évoluent.
+   ============================================================ */
+const SEED_AIDES_SECTEUR = {
+  restauration: {
+    aides: ["Aides à la rénovation énergétique des commerces (dispositifs locaux/FISAC)", "Aide à l'embauche en apprentissage restauration"],
+    obligations: ["Licence de débit de boissons (si vente d'alcool)", "Permis d'exploitation (formation obligatoire)", "HACCP — formation hygiène alimentaire obligatoire", "Affichage des allergènes"],
+  },
+  batiment: {
+    aides: ["Qualification RGE pour les aides à la rénovation énergétique", "MaPrimeRénov' (accessible via un pro RGE)", "Éco-prêt à taux zéro"],
+    obligations: ["Assurance décennale obligatoire", "Garantie de parfait achèvement", "Carte professionnelle du bâtiment selon l'activité"],
+  },
+  beaute: {
+    aides: ["Aides à la formation continue coiffure/esthétique (OPCO)"],
+    obligations: ["Diplôme ou certification obligatoire (coiffure/esthétique)", "Normes d'hygiène spécifiques (stérilisation du matériel)"],
+  },
+  sante: {
+    aides: [],
+    obligations: ["Inscription à l'Ordre professionnel", "Assurance RCP obligatoire", "Numéro RPPS/ADELI à jour"],
+  },
+  commerce_detail: {
+    aides: [],
+    obligations: ["Registre du commerce à jour", "Affichage des prix", "Licence de vente d'alcool si applicable"],
+  },
+  commerce_gros: {
+    aides: [],
+    obligations: ["Traçabilité des produits alimentaires le cas échéant", "Respect des normes d'hygiène en gros"],
+  },
+  informatique: {
+    aides: ["Crédit d'impôt recherche (CIR) / innovation (CII) pour l'édition de logiciels", "Aides France Num pour la transformation numérique"],
+    obligations: ["Conformité RGPD si traitement de données personnelles", "Déclaration CNIL si applicable"],
+  },
+  securite_nettoyage: {
+    aides: [],
+    obligations: ["Carte professionnelle CNAPS obligatoire (sécurité privée)", "Autorisation d'exercice CNAPS pour l'entreprise", "Habilitations spécifiques nettoyage industriel/désinfection"],
+  },
+  transport: {
+    aides: ["Suramortissement véhicules propres"],
+    obligations: ["Capacité de transport (licence)", "Inscription au registre des transporteurs", "Carte de conducteur"],
+  },
+  immobilier: {
+    aides: [],
+    obligations: ["Carte professionnelle transaction/gestion immobilière si agence", "Garantie financière et assurance RCP", "Registre des mandats"],
+  },
+  conseil: {
+    aides: ["Aides au conseil stratégique (Bpifrance Diag)"],
+    obligations: ["Assurance RCP recommandée"],
+  },
+  automobile: {
+    aides: ["Aides à la formation véhicules électriques/hybrides"],
+    obligations: ["Agrément contrôle technique si applicable", "Gestion réglementée des déchets automobiles (huiles, pneus)"],
+  },
+  autres: { aides: [], obligations: [] },
+};
+
+async function loadSecteurContentFromSupabase() {
+  const { data, error } = await supabase.from("secteur_content").select("secteur_id, aides, obligations, updated_at, updated_by");
+  if (error) { console.error("Erreur chargement contenu secteurs :", error.message); return null; }
+  const map = {};
+  (data || []).forEach((row) => {
+    map[row.secteur_id] = { aides: row.aides || [], obligations: row.obligations || [], updatedAt: row.updated_at, updatedBy: row.updated_by };
+  });
+  return map;
+}
+async function upsertSecteurContentRemote(secteurId, patch, updatedBy) {
+  const { error } = await supabase.from("secteur_content").upsert({
+    secteur_id: secteurId, ...patch, updated_at: new Date().toISOString(), updated_by: updatedBy || null,
+  });
+  if (error) console.error("Erreur sauvegarde contenu secteur :", error.message);
+}
+function getFormeJuridiqueItems(client) {
+  const base = FORME_JURIDIQUE_CHECKLIST_ITEMS[client.formeJuridique] || [];
+  const extra = client.secteur === "immobilier" ? HOLDING_CHECKLIST_ITEMS : [];
+  return [...base, ...extra];
+}
 
 function normalizeText(s) {
   return String(s || "")
@@ -194,6 +339,7 @@ function migrateClients(list) {
     if (!next.activite) next.activite = "";
     if (next.secteurManuel == null) next.secteurManuel = false;
     if (!next.secteur) next.secteur = classifyActivite(next.activite);
+    if (!next.formeJuridiqueHistory) next.formeJuridiqueHistory = {};
     if (!next.corporate) {
       next.corporate = {
         kyc: { lab: false, mandat: false, choixPA: "", beneficiaireEffectif: false, beneficiaireNom: "" },
@@ -539,6 +685,7 @@ function CabinetApp({ session, onLogout }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [tasksDb, setTasksDb] = useState([]); // tâches réelles (table "tasks"), indépendantes des échéances fiscales
+  const [secteurContent, setSecteurContent] = useState(null);
 
   // Empêche le canal temps réel de "rejouer" nos propres écritures juste après qu'on les a envoyées
   const pendingLocalIds = useRef(new Set());
@@ -547,10 +694,11 @@ function CabinetApp({ session, onLogout }) {
 
   useEffect(() => {
     (async () => {
-      const [storedClients, storedTeam, storedPortefeuilles] = await Promise.all([
+      const [storedClients, storedTeam, storedPortefeuilles, storedSecteurContent] = await Promise.all([
         loadClientsFromSupabase(),
         loadTeamFromSupabase(),
         loadPortefeuillesFromSupabase(),
+        loadSecteurContentFromSupabase(),
       ]);
       if (storedClients && storedClients.length) {
         setClients(migrateClients(storedClients));
@@ -560,6 +708,8 @@ function CabinetApp({ session, onLogout }) {
       }
       setTeam(storedTeam || []);
       setPortefeuilles(storedPortefeuilles || []);
+      // Fusion : le contenu en base prime, la seed comble les secteurs jamais édités
+      setSecteurContent({ ...SEED_AIDES_SECTEUR, ...(storedSecteurContent || {}) });
       setLoading(false);
     })();
 
@@ -674,6 +824,10 @@ function CabinetApp({ session, onLogout }) {
   const myPortefeuilleId = myRow?.portefeuille_id || null;
   const isAdmin = myRole === "admin";
   const canManageTeam = isAdmin || myRole === "expert" || myRole === "chef_mission";
+  const updateSecteurContent = useCallback((secteurId, patch) => {
+    setSecteurContent((prev) => ({ ...prev, [secteurId]: { ...(prev?.[secteurId] || {}), ...patch } }));
+    upsertSecteurContentRemote(secteurId, patch, me);
+  }, [me]);
 
   // Pour les opérations qui touchent plusieurs clients d'un coup (renommage/suppression d'un collaborateur)
   const persistMany = useCallback((clientsToSave) => {
@@ -983,6 +1137,9 @@ function CabinetApp({ session, onLogout }) {
                   canManageTeam={canManageTeam}
                   onAdd={addTeamMember} onRename={renameTeamMember} onDelete={deleteTeamMember}
                   onUpdateMember={updateTeamMember} onAddPortefeuille={addPortefeuille} />
+              )}
+              {view === "aides-secteur" && (
+                <AidesSecteurView content={secteurContent || {}} canEdit={canManageTeam} onUpdate={updateSecteurContent} />
               )}
             </>
           )}
@@ -1329,9 +1486,16 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
       ],
     },
     {
+      {
       id: "juridique", label: "Juridique",
       items: [
         { id: "age", label: "Assemblées (AGE / AGO)", icon: Building2, badge: counts.ageAlert, badgeTone: "amber" },
+      ],
+    },
+    {
+      id: "ressources", label: "Ressources sectorielles",
+      items: [
+        { id: "aides-secteur", label: "Actualités & Aides", icon: Briefcase },
       ],
     },
     {
@@ -2044,7 +2208,8 @@ function ClientEditorPage({ client, team, me, onUpdate, onClose }) {
   if (!client) return null;
   const tabs = [
     { id: "infos", label: "Infos générales" }, { id: "corporate", label: "Corporate" }, { id: "tva", label: "TVA" },
-    { id: "bilan", label: "Bilan" }, { id: "acomptes", label: "Acomptes" }, { id: "age", label: "AGE / AGO" }, { id: "mission", label: "Accueil" },
+    { id: "bilan", label: "Bilan" }, { id: "acomptes", label: "Acomptes" }, { id: "age", label: "AGE / AGO" },
+    { id: "formeJuridique", label: "Forme juridique" }, { id: "mission", label: "Accueil" },
     { id: "honoraires", label: "Honoraires" }, { id: "social", label: "Social" }, { id: "notes", label: "Notes" },
   ];
   return (
@@ -2095,6 +2260,7 @@ function ClientEditorPage({ client, team, me, onUpdate, onClose }) {
         {tab === "bilan" && <BilanTab client={client} onUpdate={onUpdate} />}
         {tab === "acomptes" && <AcomptesTab client={client} onUpdate={onUpdate} />}
         {tab === "age" && <AgeAgoEditor client={client} onUpdate={onUpdate} />}
+        {tab === "formeJuridique" && <FormeJuridiqueEditor client={client} onUpdate={onUpdate} />}
         {tab === "mission" && <MissionTab client={client} onUpdate={onUpdate} />}
         {tab === "notes" && <NotesTab client={client} me={me} onUpdate={onUpdate} />}
       </div>
@@ -2126,7 +2292,7 @@ function InfosTab({ client, team, onUpdate }) {
     <div>
       <FieldRow label="SIREN"><TextInput defaultValue={client.siren} onCommit={(v) => onUpdate(client.id, { siren: v })} width={140} /></FieldRow>
       <FieldRow label="Logiciel"><SelectPill value={client.logiciel} options={["MYUNISOFT", "QUADRA"]} onChange={(v) => onUpdate(client.id, { logiciel: v })} /></FieldRow>
-      <FieldRow label="Forme juridique"><SelectPill value={client.formeJuridique} options={["SARL", "EURL", "SAS", "SASU", "SCI", "SA", "SNC", "EI", "Association"]} onChange={(v) => onUpdate(client.id, { formeJuridique: v })} /></FieldRow>
+      <FieldRow label="Forme juridique"><SelectPill value={client.formeJuridique} options={["EI", "EURL", "SARL", "SAS", "SASU", "SCI", "SCM", "SELARL", "SA", "SNC", "Association"]} onChange={(v) => onUpdate(client.id, { formeJuridique: v })} /></FieldRow>
       <FieldRow label="Capital social"><TextInput defaultValue={client.capital} onCommit={(v) => onUpdate(client.id, { capital: v })} placeholder="ex. 5 000 €" width={140} /></FieldRow>
       <FieldRow label="Activité">
         <TextInput
@@ -2533,6 +2699,117 @@ function AgeAgoEditor({ client, onUpdate }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+function FormeJuridiqueEditor({ client, onUpdate }) {
+  const history = client.formeJuridiqueHistory || {};
+  const years = Object.keys(history).sort((a, b) => b - a);
+  const [newYear, setNewYear] = useState(String(new Date().getFullYear()));
+  const items = getFormeJuridiqueItems(client);
+  const addYear = () => {
+    if (!newYear || history[newYear]) return;
+    const blank = Object.fromEntries(items.map((it) => [it.id, false]));
+    onUpdate(client.id, { formeJuridiqueHistory: { ...history, [newYear]: { ...blank, notes: "" } } });
+  };
+  const patchYear = (year, patch) => onUpdate(client.id, { formeJuridiqueHistory: { ...history, [year]: { ...history[year], ...patch } } });
+
+  if (!client.formeJuridique) {
+    return <EmptyNote text="Renseignez d'abord la forme juridique dans l'onglet Infos générales." />;
+  }
+  if (items.length === 0) {
+    return <EmptyNote text={`Aucune checklist définie pour "${client.formeJuridique}" pour le moment.`} />;
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <input type="number" placeholder="Année" value={newYear} onChange={(e) => setNewYear(e.target.value)} style={{ width: 100, ...inputStyle, padding: "8px 10px" }} />
+        <button onClick={addYear} style={{ display: "flex", alignItems: "center", gap: 6, background: T.navy, color: "#fff", border: "none", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}><Plus size={14} /> Ajouter cet exercice</button>
+      </div>
+      {years.length === 0 ? <EmptyNote text="Aucun exercice suivi pour ce dossier." /> : years.map((year) => {
+        const y = history[year] || {};
+        return (
+          <div key={year} style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: "12px 14px", marginBottom: 10, background: T.card }}>
+            <div style={{ fontFamily: T.serif, fontWeight: 600, fontSize: 13, color: T.navy, marginBottom: 8 }}>
+              Exercice {year} · <span style={{ fontFamily: T.mono, fontSize: 11, color: T.inkMuted }}>{client.formeJuridique}</span>
+            </div>
+            {items.map((it) => (
+              <FieldRow key={it.id} label={it.label}>
+                <ToggleBtn on={!!y[it.id]} onClick={() => patchYear(year, { [it.id]: !y[it.id] })} />
+              </FieldRow>
+            ))}
+            <FieldRow label="Notes"><TextInput defaultValue={y.notes} onCommit={(v) => patchYear(year, { notes: v })} placeholder="—" width={200} align="left" /></FieldRow>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+function AidesSecteurView({ content, canEdit, onUpdate }) {
+  const [active, setActive] = useState(SECTEURS_ACTIVITE[0].id);
+  const data = content[active] || { aides: [], obligations: [] };
+
+  const addLine = (field) => onUpdate(active, { [field]: [...(data[field] || []), ""] });
+  const editLine = (field, idx, v) => {
+    const arr = [...(data[field] || [])]; arr[idx] = v; onUpdate(active, { [field]: arr });
+  };
+  const removeLine = (field, idx) => {
+    const arr = (data[field] || []).filter((_, i) => i !== idx); onUpdate(active, { [field]: arr });
+  };
+
+  const renderList = (field, title, tone) => (
+    <Panel title={title}>
+      {(data[field] || []).length === 0 && !canEdit ? <EmptyNote text="Rien de renseigné pour ce secteur." /> : null}
+      {(data[field] || []).map((line, idx) => (
+        <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 4px", borderBottom: `1px solid ${T.line}` }}>
+          <CircleDot size={7} color={tone} style={{ flexShrink: 0 }} />
+          {canEdit ? (
+            <input defaultValue={line} onBlur={(e) => editLine(field, idx, e.target.value)}
+              style={{ flex: 1, fontSize: 12.5, border: "none", background: "transparent", padding: "2px 0" }} />
+          ) : (
+            <span style={{ flex: 1, fontSize: 12.5, color: T.ink }}>{line}</span>
+          )}
+          {canEdit && (
+            <button onClick={() => removeLine(field, idx)} style={{ background: "none", border: "none", cursor: "pointer", color: T.inkMuted }}>
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
+      ))}
+      {canEdit && (
+        <button onClick={() => addLine(field)} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, background: "none", border: `1px dashed ${T.line}`, borderRadius: 9, padding: "7px 12px", fontSize: 12, color: T.navy, cursor: "pointer" }}>
+          <Plus size={13} /> Ajouter une ligne
+        </button>
+      )}
+    </Panel>
+  );
+
+  return (
+    <div>
+      <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Actualités & Aides par secteur</h1></Reveal>
+      <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18 }}>
+        Aides, dispositifs et obligations réglementaires propres à chaque secteur d'activité.
+        {canEdit ? " Modifiable directement ici." : " Lecture seule — seuls Expert, Chef de mission et Admin peuvent l'éditer."}
+      </p>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
+        {SECTEURS_ACTIVITE.map((s) => (
+          <button key={s.id} onClick={() => setActive(s.id)} style={{
+            fontSize: 11.5, fontWeight: 700, padding: "5px 11px", borderRadius: 999, cursor: "pointer",
+            border: `1px solid ${active === s.id ? s.color : T.line}`,
+            background: active === s.id ? s.color + "1A" : "transparent",
+            color: active === s.id ? s.color : T.inkMuted,
+          }}>{s.label}</button>
+        ))}
+      </div>
+      {renderList("aides", "Aides & dispositifs", T.navy)}
+      <div style={{ height: 14 }} />
+      {renderList("obligations", "Obligations réglementaires", T.gold)}
+      {content[active]?.updatedAt && (
+        <div style={{ fontSize: 11, color: T.inkMuted, marginTop: 14 }}>
+          Dernière mise à jour : {new Date(content[active].updatedAt).toLocaleDateString("fr-FR")}{content[active].updatedBy ? ` par ${content[active].updatedBy}` : ""}
+        </div>
+      )}
     </div>
   );
 }
@@ -3628,7 +3905,7 @@ function AddClientModal({ team, me, portefeuilleId, onClose, onCreate }) {
     onCreate({
       id: `c-${Date.now()}`, portefeuilleId, statutDossier: "actif", nom: nom.trim(), siren: siren.trim(), logiciel, dateCloture,
       collab, expert, chefMission, formeJuridique: "", capital: "", activite: "",
-      tvaRegime: "", tvaExig: "", tvaMois: {}, regimeHistory: [], ageAgoHistory: {},
+      tvaRegime: "", tvaExig: "", tvaMois: {}, regimeHistory: [], ageAgoHistory: {}, formeJuridiqueHistory: {},
       corporate: { kyc: { lab: false, mandat: false, choixPA: "", beneficiaireEffectif: false, beneficiaireNom: "" }, kycExtra: [], notes: "" },
       mission: { "Acceptation mission": false, "Lettre reprise": false, "LAB": false, "Fiche client": false, "Lettre mission": false, "Mandat": false, "Attestation bilan": false },
     });
