@@ -365,6 +365,30 @@ function addMonthsISO(iso, months) {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(y, m - 1 + months, d);
   return dt.toISOString().slice(0, 10);
+  function fmtEUR(v) {
+  const n = Number(v);
+  if (v === "" || v == null || Number.isNaN(n)) return "—";
+  return n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+}
+// Échéance légale approximative de dépôt : clôture + 3 mois (déjà la règle utilisée pour les échéances fiscales)
+function getBilanEcheance(dateCloture) {
+  return dateCloture ? addMonthsISO(dateCloture, 3) : null;
+}
+function getBilanStatut(b, dateCloture) {
+  const echeance = getBilanEcheance(dateCloture);
+  const enRetard = echeance && !b.transmis && todayISO() > echeance;
+  if (b.transmis) return { label: "Transmis", tone: "green" };
+  if (enRetard) return { label: "En retard", tone: "red" };
+  if (b.valideClient) return { label: "Validé client", tone: "purple" };
+  if (b.revision === "terminee") return { label: "Révision terminée", tone: "purple" };
+  if (b.revision === "en_cours") return { label: "En cours", tone: "amber" };
+  return { label: "À faire", tone: "neutral" };
+}
+const BILAN_REVISION_STEPS = [
+  { id: "a_faire", label: "À faire" },
+  { id: "en_cours", label: "En cours" },
+  { id: "terminee", label: "Terminée" },
+];
 }
 function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -2476,12 +2500,102 @@ function TvaTab({ client, onUpdate }) {
 
 function BilanTab({ client, onUpdate }) {
   const b = client.bilan || {};
-  const toggle = (field) => onUpdate(client.id, { bilan: { ...b, [field]: !b[field] } });
+  const patch = (fields) => onUpdate(client.id, { bilan: { ...b, ...fields } });
+  const toggle = (field) => patch({ [field]: !b[field] });
+  const echeance = getBilanEcheance(client.dateCloture);
+  const statut = getBilanStatut(b, client.dateCloture);
+  const enRetard = echeance && todayISO() > echeance && !b.transmis;
+
   return (
     <div>
-      <FieldRow label="Finalisé après échéance"><ToggleBtn on={!!b.finaliseApres} onClick={() => toggle("finaliseApres")} /></FieldRow>
-      <FieldRow label="Non encore finalisé (en retard)"><ToggleBtn on={!!b.nonFinalise} onClick={() => toggle("nonFinalise")} tone="red" /></FieldRow>
-      <FieldRow label="Courrier de retard signé et classé"><ToggleBtn on={!!b.courrier} onClick={() => toggle("courrier")} /></FieldRow>
+      {/* 1) Cartouches de statut */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
+        <div style={{ flex: "1 1 160px", border: `1px solid ${T.line}`, borderRadius: 10, padding: "12px 14px" }}>
+          <div style={{ fontSize: 10.5, color: T.inkMuted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Statut</div>
+          <Stamped tone={statut.tone}>{statut.label}</Stamped>
+        </div>
+        <div style={{ flex: "1 1 160px", border: `1px solid ${T.line}`, borderRadius: 10, padding: "12px 14px" }}>
+          <div style={{ fontSize: 10.5, color: T.inkMuted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Échéance légale (clôture + 3 mois)</div>
+          <div style={{ fontFamily: T.mono, fontSize: 13.5, fontWeight: 700, color: enRetard ? T.red : T.ink }}>{fmtFR(echeance)}</div>
+        </div>
+        <div style={{ flex: "1 1 160px", border: `1px solid ${T.line}`, borderRadius: 10, padding: "12px 14px" }}>
+          <div style={{ fontSize: 10.5, color: T.inkMuted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Date de clôture</div>
+          <div style={{ fontFamily: T.mono, fontSize: 13.5, fontWeight: 700 }}>{fmtFR(client.dateCloture)}</div>
+        </div>
+      </div>
+
+      {/* 2) Étapes d'avancement */}
+      <Panel title="Étapes d'avancement">
+        <FieldRow label="Révision comptable">
+          <div style={{ display: "flex", gap: 6 }}>
+            {BILAN_REVISION_STEPS.map((s) => (
+              <button key={s.id} onClick={() => patch({ revision: s.id })} style={{
+                fontSize: 11.5, fontWeight: 700, padding: "5px 11px", borderRadius: 999, cursor: "pointer",
+                border: `1px solid ${(b.revision || "a_faire") === s.id ? T.navy : T.line}`,
+                background: (b.revision || "a_faire") === s.id ? T.navy + "1A" : "transparent",
+                color: (b.revision || "a_faire") === s.id ? T.navy : T.inkMuted,
+              }}>{s.label}</button>
+            ))}
+          </div>
+        </FieldRow>
+        <FieldRow label="Projet de bilan validé par le client">
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <ToggleBtn on={!!b.valideClient} onClick={() => patch({ valideClient: !b.valideClient, valideClientDate: !b.valideClient ? todayISO() : b.valideClientDate })} />
+            {b.valideClient && (
+              <input type="date" value={b.valideClientDate || ""} onChange={(e) => patch({ valideClientDate: e.target.value })}
+                style={{ fontFamily: T.mono, fontSize: 12, padding: "4px 7px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card }} />
+            )}
+          </div>
+        </FieldRow>
+        <FieldRow label="Transmis (liasse télétransmise)">
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <ToggleBtn on={!!b.transmis} onClick={() => patch({ transmis: !b.transmis, transmisDate: !b.transmis ? todayISO() : b.transmisDate })} tone="green" />
+            {b.transmis && (
+              <input type="date" value={b.transmisDate || ""} onChange={(e) => patch({ transmisDate: e.target.value })}
+                style={{ fontFamily: T.mono, fontSize: 12, padding: "4px 7px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card }} />
+            )}
+          </div>
+        </FieldRow>
+      </Panel>
+
+      <div style={{ height: 14 }} />
+
+      {/* 3) Données financières clés */}
+      <Panel title="Données financières clés">
+        <FieldRow label="Chiffre d'affaires (CA)">
+          <input type="number" defaultValue={b.ca ?? ""} onBlur={(e) => patch({ ca: e.target.value })} placeholder="0"
+            style={{ fontFamily: T.mono, fontSize: 12.5, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, width: 140 }} />
+        </FieldRow>
+        <FieldRow label="Résultat net (bénéfice / perte)">
+          <input type="number" defaultValue={b.resultat ?? ""} onBlur={(e) => patch({ resultat: e.target.value })} placeholder="0"
+            style={{ fontFamily: T.mono, fontSize: 12.5, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, width: 140 }} />
+        </FieldRow>
+        <FieldRow label="Capitaux propres">
+          <input type="number" defaultValue={b.capitauxPropres ?? ""} onBlur={(e) => patch({ capitauxPropres: e.target.value })} placeholder="0"
+            style={{ fontFamily: T.mono, fontSize: 12.5, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, width: 140 }} />
+        </FieldRow>
+        <FieldRow label="Trésorerie finale">
+          <input type="number" defaultValue={b.tresorerie ?? ""} onBlur={(e) => patch({ tresorerie: e.target.value })} placeholder="0"
+            style={{ fontFamily: T.mono, fontSize: 12.5, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, width: 140 }} />
+        </FieldRow>
+        {(b.ca !== undefined && b.ca !== "") || (b.resultat !== undefined && b.resultat !== "") ? (
+          <div style={{ display: "flex", gap: 18, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.line}`, flexWrap: "wrap" }}>
+            <div><span style={{ fontSize: 11, color: T.inkMuted }}>CA </span><strong style={{ fontFamily: T.mono }}>{fmtEUR(b.ca)}</strong></div>
+            <div><span style={{ fontSize: 11, color: T.inkMuted }}>Résultat </span><strong style={{ fontFamily: T.mono, color: Number(b.resultat) < 0 ? T.red : T.green }}>{fmtEUR(b.resultat)}</strong></div>
+            {b.capitauxPropres !== undefined && b.capitauxPropres !== "" && <div><span style={{ fontSize: 11, color: T.inkMuted }}>Capitaux propres </span><strong style={{ fontFamily: T.mono }}>{fmtEUR(b.capitauxPropres)}</strong></div>}
+            {b.tresorerie !== undefined && b.tresorerie !== "" && <div><span style={{ fontSize: 11, color: T.inkMuted }}>Trésorerie </span><strong style={{ fontFamily: T.mono }}>{fmtEUR(b.tresorerie)}</strong></div>}
+          </div>
+        ) : null}
+      </Panel>
+
+      <div style={{ height: 14 }} />
+
+      {/* 4) Legacy — ne pas supprimer : alimente le tableau de bord et les échéances fiscales */}
+      <Panel title="Suivi du retard (utilisé par le tableau de bord)">
+        <FieldRow label="Finalisé après échéance"><ToggleBtn on={!!b.finaliseApres} onClick={() => toggle("finaliseApres")} /></FieldRow>
+        <FieldRow label="Non encore finalisé (en retard)"><ToggleBtn on={!!b.nonFinalise} onClick={() => toggle("nonFinalise")} tone="red" /></FieldRow>
+        <FieldRow label="Courrier de retard signé et classé"><ToggleBtn on={!!b.courrier} onClick={() => toggle("courrier")} /></FieldRow>
+      </Panel>
     </div>
   );
 }
