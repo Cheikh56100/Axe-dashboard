@@ -744,6 +744,20 @@ async function insertPortefeuilleRemote(p) {
   if (error) console.error("Erreur création portefeuille :", error.message);
   return error;
 }
+async function loadNotificationsFromSupabase(teamId) {
+  if (!teamId) return [];
+  const { data, error } = await supabase.from("notifications").select("*").eq("destinataire_id", teamId).order("created_at", { ascending: false }).limit(30);
+  if (error) { console.error("Erreur chargement notifications :", error.message); return []; }
+  return data || [];
+}
+async function insertNotificationRemote(n) {
+  const { error } = await supabase.from("notifications").insert(n);
+  if (error) console.error("Erreur création notification :", error.message);
+}
+async function markNotificationReadRemote(id) {
+  const { error } = await supabase.from("notifications").update({ lu: true }).eq("id", id);
+  if (error) console.error("Erreur notification :", error.message);
+}
 
 const ROLE_LABELS = { collaborateur: "Collaborateur", expert: "Expert", chef_mission: "Chef de mission", admin: "Admin" };
 
@@ -765,8 +779,9 @@ function CabinetApp({ session, onLogout }) {
   const [activeClientTab, setActiveClientTab] = useState(null); // id du dossier affiché en page pleine, ou null
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [tasksDb, setTasksDb] = useState([]); // tâches réelles (table "tasks"), indépendantes des échéances fiscales
+  const [tasksDb, setTasksDb] = useState([]); // tâches réelles (table "tasks"), indépendantes des échéances fiscales calculées
   const [secteurContent, setSecteurContent] = useState(null);
+  const [notifications, setNotifications] = useState([]);
 
   // Empêche le canal temps réel de "rejouer" nos propres écritures juste après qu'on les a envoyées
   const pendingLocalIds = useRef(new Set());
@@ -909,7 +924,23 @@ function CabinetApp({ session, onLogout }) {
     setSecteurContent((prev) => ({ ...prev, [secteurId]: { ...(prev?.[secteurId] || {}), ...patch } }));
     upsertSecteurContentRemote(secteurId, patch, me);
   }, [me]);
+// Notifications (alertes TVA Fait → Chef de mission, confirmation → Collaborateur)
+  useEffect(() => {
+    if (!myRow?.id) return;
+    let cancelled = false;
+    const reload = () => loadNotificationsFromSupabase(myRow.id).then((rows) => { if (!cancelled) setNotifications(rows); });
+    reload();
+    const channel = supabase
+      .channel(`notifs-${myRow.id}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `destinataire_id=eq.${myRow.id}` }, () => reload())
+      .subscribe();
+    return () => { cancelled = true; supabase.removeChannel(channel); };
+  }, [myRow?.id]);
 
+  const markNotificationRead = useCallback((id) => {
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, lu: true } : n)));
+    markNotificationReadRemote(id);
+  }, []);
   // Pour les opérations qui touchent plusieurs clients d'un coup (renommage/suppression d'un collaborateur)
   const persistMany = useCallback((clientsToSave) => {
     setSaveStatus("saving");
@@ -1169,7 +1200,8 @@ function CabinetApp({ session, onLogout }) {
           onSelectTab={(id) => setActiveClientTab(id)} onCloseTab={closeClientTab}
           onNav={navTo} onOpenClient={openClientTab} onNewClient={() => setShowAddClient(true)} clients={myClients}
           notifCount={myTasks.filter((t) => t.bucket === "retard").length || undefined}
-          onOpenMobileMenu={() => setMobileMenuOpen(true)} />
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
+          notifications={notifications} onMarkNotificationRead={markNotificationRead} onOpenClient2={openClientTab} />
         <div className="px-3 py-3 md:px-7 md:py-6" style={{ ...S.content, padding: undefined }}>
           {activeClient ? (
             // key={activeClient.id} force le remontage complet du composant à chaque
@@ -1193,7 +1225,30 @@ function CabinetApp({ session, onLogout }) {
               )}
               {view === "tva" && <TvaGrid clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter}
                 regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter} me={me}
-                onCycle={(id, mois, val) => { const c = clients.find(x => x.id === id); updateClient(id, { tvaMois: { ...(c.tvaMois || {}), [mois]: val } }); }}
+                onCycle={(id, mois, val) => {
+                  const c = clients.find(x => x.id === id);
+                  if (!c) return;
+                  const previous = (c.tvaMois?.[mois] || "").toUpperCase();
+                  updateClient(id, { tvaMois: { ...(c.tvaMois || {}), [mois]: val } });
+                  // Collaborateur passe la cellule à "Fait" -> notifie le chef de mission du dossier
+                  if (val === "FAIT" && c.chefMission && c.chefMission !== me) {
+                    const dest = team.find((t) => t.nom === c.chefMission);
+                    if (dest) insertNotificationRemote({
+                      id: `n-${Date.now()}`, destinataire_id: dest.id, expediteur_id: myRow?.id || null,
+                      client_id: c.id, client_nom: c.nom, type: "tva_fait",
+                      message: `${me} a préparé la TVA de ${mois} pour ${c.nom} — à vérifier.`,
+                    });
+                  }
+                  // Chef de mission confirme (Fait -> OK) -> notifie le collaborateur en retour
+                  if (val === "OK" && previous === "FAIT" && c.collab && c.collab !== me) {
+                    const dest = team.find((t) => t.nom === c.collab);
+                    if (dest) insertNotificationRemote({
+                      id: `n-${Date.now()}`, destinataire_id: dest.id, expediteur_id: myRow?.id || null,
+                      client_id: c.id, client_nom: c.nom, type: "tva_confirme",
+                      message: `${me} a confirmé la TVA de ${mois} pour ${c.nom}.`,
+                    });
+                  }
+                }}
                 onUpdate={updateClient} onOpenClient={openClientTab} />}
               {view === "bilans" && <BilansView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "acomptes" && <AcomptesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
@@ -1716,7 +1771,7 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
 /* ============================================================
    TOP BAR
    ============================================================ */
-function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTab, onHome, onSelectTab, onCloseTab, onNav, onOpenClient, onNewClient, clients, notifCount, onOpenMobileMenu }) {
+function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTab, onHome, onSelectTab, onCloseTab, onNav, onOpenClient, onNewClient, clients, notifCount, onOpenMobileMenu, notifications = [], onMarkNotificationRead, onOpenClient2 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
@@ -1852,21 +1907,35 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
           )}
           <button className="sm:hidden topIconBtn" title="Rechercher" onClick={() => setSearchOpen((s) => !s)}><Search size={16} strokeWidth={1.9} /></button>
           <div className="relative hidden md:block">
+            {(() => { const unread = notifications.filter((n) => !n.lu).length + notifCount; return (
             <button onClick={() => setNotifOpen((s) => !s)} title="Notifications" className="topIconBtn"><Bell size={16} strokeWidth={1.9} />
-              {!!notifCount && <span className="absolute top-1 right-1 bg-badge-red-text text-white text-[9px] font-bold rounded-full px-[4px] leading-[13px]">{notifCount}</span>}
+              {!!unread && <span className="absolute top-1 right-1 bg-badge-red-text text-white text-[9px] font-bold rounded-full px-[4px] leading-[13px]">{unread}</span>}
             </button>
+            ); })()}
             {notifOpen && (
-              <div className="absolute right-0 top-9 w-72 card p-3 z-30">
+              <div className="absolute right-0 top-9 w-80 card p-3 z-30 max-h-96 overflow-y-auto scrollbar">
                 <div className="text-xs font-bold text-ink mb-2">Notifications</div>
-                {notifCount ? (
-                  <div onClick={() => { onNav("planning"); setNotifOpen(false); }} className="hoverRow clickable text-xs text-inksoft rounded-lg p-2 cursor-pointer">
-                    {notifCount} échéance{notifCount > 1 ? "s" : ""} en retard sur votre planning
-                  </div>
-                ) : (
+                {notifications.length === 0 && !notifCount && (
                   <div className="text-xs text-inkmuted italic px-2 py-1">Aucune notification pour le moment.</div>
                 )}
+                {!!notifCount && (
+                  <div onClick={() => { onNav("planning"); setNotifOpen(false); }} className="hoverRow clickable text-xs text-inksoft rounded-lg p-2 cursor-pointer mb-1">
+                    {notifCount} échéance{notifCount > 1 ? "s" : ""} en retard sur votre planning
+                  </div>
+                )}
+                {notifications.map((n) => (
+                  <div key={n.id} onClick={() => { onMarkNotificationRead?.(n.id); if (n.client_id && onOpenClient2) onOpenClient2(n.client_id); setNotifOpen(false); }}
+                    className="hoverRow clickable text-xs rounded-lg p-2 cursor-pointer flex items-start gap-2">
+                    <span className={`w-1.5 h-1.5 rounded-full mt-1 shrink-0 ${n.lu ? "bg-line" : "bg-badge-red-text"}`} />
+                    <div>
+                      <div className={n.lu ? "text-inkmuted" : "text-ink font-medium"}>{n.message}</div>
+                      <div className="text-[10px] text-inkmuted mt-0.5">{new Date(n.created_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
+          </div>
           </div>
           {toolIcons.map((ic) => {
             const Icon = ic.icon;
@@ -2285,6 +2354,18 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
    ============================================================ */
 function ClientEditorPage({ client, team, me, onUpdate, onClose }) {
   const [tab, setTab] = useState("infos");
+  // Brouillon local : toutes les modifications restent ici tant qu'on n'a pas cliqué "Enregistrer".
+  // Reset uniquement quand on change de dossier (changement de client.id), pas à chaque frappe.
+  const [draft, setDraft] = useState(client);
+  useEffect(() => { setDraft(client); }, [client.id]);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(client);
+  const patchDraft = (_id, patch) => setDraft((d) => ({ ...d, ...patch }));
+  const save = () => onUpdate(client.id, draft);
+  const discard = () => setDraft(client);
+  const handleClose = () => {
+    if (dirty && !confirm("Des modifications ne sont pas enregistrées. Fermer sans enregistrer ?")) return;
+    onClose();
+  };
   if (!client) return null;
   const tabs = [
     { id: "infos", label: "Infos générales" }, { id: "corporate", label: "Corporate" }, { id: "tva", label: "TVA" },
@@ -2298,7 +2379,7 @@ function ClientEditorPage({ client, team, me, onUpdate, onClose }) {
         <div className="flex items-start justify-between gap-3 flex-wrap" style={{ marginBottom: 4 }}>
           <div className="min-w-0">
             <div style={{ fontFamily: T.mono, fontSize: 11, color: T.inkMuted }}>{client.siren || "SIREN non renseigné"}</div>
-            <input defaultValue={client.nom} onBlur={(e) => onUpdate(client.id, { nom: e.target.value || client.nom })}
+            <input defaultValue={client.nom} onBlur={(e) => patchDraft(client.id, { nom: e.target.value || client.nom })}
               className="w-full sm:min-w-[260px] sm:w-auto"
               style={{ fontFamily: T.serif, fontSize: 16, fontWeight: 700, color: T.ink, border: "none", background: "transparent", padding: "2px 0", margin: "2px 0 6px" }} />
             <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
@@ -2307,7 +2388,7 @@ function ClientEditorPage({ client, team, me, onUpdate, onClose }) {
               <RoleBadge role="Chef de mission" name={client.chefMission} />
               {client.tvaRegime && <span style={{ fontFamily: T.mono, fontSize: 11, color: T.navy, fontWeight: 700, background: T.navySoft, padding: "2px 9px", borderRadius: 999 }}>{client.tvaRegime}{client.tvaRegime === "CA3" && client.tvaPeriodicite ? ` · ${TVA_PERIODICITE_LABELS[client.tvaPeriodicite]}` : ""}</span>}
               <button
-                onClick={() => onUpdate(client.id, { statutDossier: client.statutDossier === "inactif" ? "actif" : "inactif" })}
+                onClick={() => patchDraft(client.id, { statutDossier: draft.statutDossier === "inactif" ? "actif" : "inactif" })}
                 className="statusToggle"
                 title="Basculer le statut du dossier"
                 style={{
@@ -2320,9 +2401,24 @@ function ClientEditorPage({ client, team, me, onUpdate, onClose }) {
               </button>
             </div>
           </div>
-          <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${T.line}`, borderRadius: 9, padding: "7px 12px", cursor: "pointer", color: T.inkMuted, fontSize: 12 }}>
-            <X size={14} /> Fermer l'onglet
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            {dirty && (
+              <>
+                <span style={{ fontSize: 11, color: T.amber, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.amber }} /> Modifications non enregistrées
+                </span>
+                <button onClick={discard} style={{ background: "none", border: `1px solid ${T.line}`, borderRadius: 9, padding: "7px 12px", cursor: "pointer", color: T.inkMuted, fontSize: 12 }}>
+                  Annuler
+                </button>
+                <button onClick={save} style={{ display: "flex", alignItems: "center", gap: 6, background: T.navy, border: "none", borderRadius: 9, padding: "7px 14px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+                  <Check size={14} /> Enregistrer
+                </button>
+              </>
+            )}
+            <button onClick={handleClose} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${T.line}`, borderRadius: 9, padding: "7px 12px", cursor: "pointer", color: T.inkMuted, fontSize: 12 }}>
+              <X size={14} /> Fermer l'onglet
+            </button>
+          </div>
         </div>
       </Reveal>
       <div style={{ display: "flex", gap: 2, borderBottom: `1px solid ${T.line}`, marginTop: 16, marginBottom: 22, overflowX: "auto" }} className="scrollbar">
@@ -2334,14 +2430,14 @@ function ClientEditorPage({ client, team, me, onUpdate, onClose }) {
         ))}
       </div>
       <div style={{ maxWidth: 720, background: T.card, border: `1px solid ${T.line}`, borderRadius: T.radius, padding: "22px 24px", boxShadow: T.shadowSm }}>
-        {tab === "infos" && <InfosTab client={client} team={team} onUpdate={onUpdate} />}
-        {tab === "corporate" && <CorporateTab client={client} onUpdate={onUpdate} />}
-        {tab === "tva" && <TvaTab client={client} onUpdate={onUpdate} />}
-        {tab === "bilan" && <BilanTab client={client} onUpdate={onUpdate} />}
-        {tab === "acomptes" && <AcomptesTab client={client} onUpdate={onUpdate} />}
-        {tab === "age" && <AgeAgoEditor client={client} onUpdate={onUpdate} />}
-        {tab === "formeJuridique" && <FormeJuridiqueEditor client={client} onUpdate={onUpdate} />}
-        {tab === "mission" && <MissionTab client={client} onUpdate={onUpdate} />}
+        {tab === "infos" && <InfosTab client={draft} team={team} onUpdate={patchDraft} />}
+        {tab === "corporate" && <CorporateTab client={draft} onUpdate={patchDraft} />}
+        {tab === "tva" && <TvaTab client={draft} onUpdate={patchDraft} />}
+        {tab === "bilan" && <BilanTab client={draft} onUpdate={patchDraft} />}
+        {tab === "acomptes" && <AcomptesTab client={draft} onUpdate={patchDraft} />}
+        {tab === "age" && <AgeAgoEditor client={draft} onUpdate={patchDraft} />}
+        {tab === "formeJuridique" && <FormeJuridiqueEditor client={draft} onUpdate={patchDraft} />}
+        {tab === "mission" && <MissionTab client={draft} onUpdate={patchDraft} />}
         {tab === "notes" && <NotesTab client={client} me={me} onUpdate={onUpdate} />}
       </div>
     </div>
@@ -2746,7 +2842,12 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, regimeFilter, set
               const isCa3Trim = c.tvaRegime === "CA3" && c.tvaPeriodicite === "trimestrielle";
               return (
               <tr key={c.id} className="hoverRow">
-                <td className={onOpenClient ? "clickable" : undefined} onClick={() => onOpenClient && onOpenClient(c.id)}
+                    <td style={{ ...tdStyle, fontWeight: 600, whiteSpace: "nowrap" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {c.nom}
+                        <ConcerneToggle on={!!c.social?.concerne} onChange={(v) => patchSocial(c, { concerne: v })} small />
+                      </div>
+                    </td>
                   style={{ ...tdStyle, fontWeight: 600, whiteSpace: "nowrap", color: onOpenClient ? T.navy : T.ink }}>{c.nom}</td>
                 <td style={{ ...tdStyle, fontFamily: T.mono, color: T.inkMuted }}>
                   {c.tvaRegime}{isCa3Trim && <span style={{ marginLeft: 4, fontSize: 9.5, color: T.navy, background: T.navySoft, padding: "1px 5px", borderRadius: 999 }}>Trim.</span>}
@@ -3326,6 +3427,15 @@ function odLabel(val) {
   const v = (val || "").toUpperCase();
   return v === "COMPTA" ? "Compta" : v === "RECU" ? "Reçu" : v === "NA" ? "N/A" : "·";
 }
+function ConcerneToggle({ on, onChange, small }) {
+  const size = small ? { fontSize: 9.5, padding: "2px 8px" } : { fontSize: 11, padding: "4px 11px" };
+  return (
+    <div style={{ display: "inline-flex", borderRadius: 999, border: `1px solid ${T.line}`, overflow: "hidden" }}>
+      <button onClick={() => onChange(true)} style={{ ...size, fontWeight: 700, border: "none", cursor: "pointer", background: on ? T.navy : "transparent", color: on ? "#fff" : T.inkMuted }}>Concerné</button>
+      <button onClick={() => onChange(false)} style={{ ...size, fontWeight: 700, border: "none", cursor: "pointer", background: !on ? T.paperDeep : "transparent", color: !on ? T.inkSoft : T.inkMuted }}>Non concerné</button>
+    </div>
+  );
+}
 function CadreSocialView({ clients, search, roleFilter, setRoleFilter, me, onUpdate }) {
   const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
   const concernes = filtered.filter((c) => c.social?.concerne);
@@ -3388,9 +3498,7 @@ function CadreSocialView({ clients, search, roleFilter, setRoleFilter, me, onUpd
         {autres.length === 0 ? <EmptyNote text="Tous les dossiers de cette sélection sont marqués concernés." /> : autres.map((c) => (
           <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 4px", borderBottom: `1px solid ${T.line}` }}>
             <span style={{ flex: 1, fontWeight: 600, fontSize: 12.5 }}>{c.nom}</span>
-            <button onClick={() => patchSocial(c, { concerne: true })} style={{ fontSize: 11.5, fontWeight: 600, color: T.navy, background: T.navySoft, border: "none", borderRadius: 999, padding: "4px 12px", cursor: "pointer" }}>
-              Marquer concerné
-            </button>
+            <ConcerneToggle on={!!c.social?.concerne} onChange={(v) => patchSocial(c, { concerne: v })} />
           </div>
         ))}
       </Panel>
