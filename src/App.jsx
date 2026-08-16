@@ -271,22 +271,27 @@ const SECTEUR_NEWS_QUERIES = {
   autres: "actualité aide entreprise PME France",
 };
 const OFFICIAL_PRO_FEED = "https://www.service-public.fr/abonnements/rss/actu-actu-pro.rss";
-const RSS2JSON_ENDPOINT = "https://api.rss2json.com/v1/api.json";
-
 function buildGoogleNewsRssUrl(query) {
   return `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=fr&gl=FR&ceid=FR:fr`;
 }
+// Proxy CORS gratuit, sans clé, sans compte — renvoie le XML brut du flux
+function buildProxyUrl(rssUrl) {
+  return `https://api.allorigins.win/raw?url=${encodeURIComponent(rssUrl)}`;
+}
 async function fetchRssFeed(rssUrl, count = 6) {
-  const url = `${RSS2JSON_ENDPOINT}?rss_url=${encodeURIComponent(rssUrl)}&count=${count}`;
-  const res = await fetch(url);
+  const res = await fetch(buildProxyUrl(rssUrl));
   if (!res.ok) throw new Error(`Erreur réseau (${res.status})`);
-  const json = await res.json();
-  if (json.status !== "ok") throw new Error(json.message || "Flux indisponible");
-  return (json.items || []).map((it) => ({
-    title: it.title,
-    link: it.link,
-    date: it.pubDate,
-    source: json.feed?.title || "",
+  const xmlText = await res.text();
+  const xml = new DOMParser().parseFromString(xmlText, "text/xml");
+  if (xml.querySelector("parsererror")) throw new Error("Flux XML illisible");
+  const channelTitle = xml.querySelector("channel > title")?.textContent || "";
+  const nodes = Array.from(xml.querySelectorAll("item")).slice(0, count);
+  if (nodes.length === 0) throw new Error("Flux vide");
+  return nodes.map((node) => ({
+    title: node.querySelector("title")?.textContent || "",
+    link: node.querySelector("link")?.textContent || "",
+    date: node.querySelector("pubDate")?.textContent || "",
+    source: channelTitle,
   }));
 }
 // Récupère les actus d'un secteur : Google Actualités (ciblé) + Service-Public.fr (officiel, générique)
