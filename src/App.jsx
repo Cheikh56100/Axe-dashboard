@@ -11,6 +11,10 @@ import {
 import { supabase } from "./supabaseClient";
 import { motion } from "framer-motion";
 import * as XLSX from "xlsx";
+import { fetchTasks, createTask, updateTask, completeTask, deleteTask, subscribeTasks } from "./services/tasks";
+import { logActivity, activityMessages } from "./services/activity";
+import { bucketize as bucketizeDeadlines, BUCKET_LABELS as DEADLINE_BUCKET_LABELS } from "./services/deadlines";
+import { TASK_STATUTS, TASK_STATUT_BY_CODE, TASK_PRIORITES, TASK_PRIORITE_BY_CODE, taskSortWeight, PILOTAGE_COLORS } from "./constants/pilotage";
 
 const T = {
   paper: "#F3F4F6", paperDeep: "#EEF2FF", ink: "#0F172A", inkSoft: "#475569", inkMuted: "#94A3B8",
@@ -466,6 +470,7 @@ function CabinetApp({ session, onLogout }) {
   const [openClientTabs, setOpenClientTabs] = useState([]); // [{id, label}]
   const [activeClientTab, setActiveClientTab] = useState(null); // id du dossier affiché en page pleine, ou null
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [tasksDb, setTasksDb] = useState([]); // tâches réelles (table "tasks"), indépendantes des échéances fiscales
 
   // Empêche le canal temps réel de "rejouer" nos propres écritures juste après qu'on les a envoyées
   const pendingLocalIds = useRef(new Set());
@@ -576,6 +581,17 @@ function CabinetApp({ session, onLogout }) {
       });
 
     return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  // Tâches (table "tasks", indépendante des échéances fiscales calculées) : chargement
+  // initial + rafraîchissement à chaque changement temps réel (simple et robuste ;
+  // le volume de tâches d'un cabinet reste faible, un refetch complet est peu coûteux).
+  useEffect(() => {
+    let cancelled = false;
+    const reload = () => fetchTasks().then((rows) => { if (!cancelled) setTasksDb(rows); });
+    reload();
+    const unsubscribe = subscribeTasks(reload);
+    return () => { cancelled = true; unsubscribe(); };
   }, []);
 
   /* ---- Identité : plus de sélection manuelle ("qui consulte le dossier ?").
@@ -744,8 +760,7 @@ function CabinetApp({ session, onLogout }) {
 
   const myTasks = useMemo(() => {
     if (!myClients.length) return [];
-    import { aggregateDeadlines } from "./services/deadlines";
-const events = aggregateDeadlines({ clients, tasks });
+    const events = computeFiscalEvents(myClients);
     const missionTasks = myClients.filter((c) => {
       const m = c.mission; if (!m) return false;
       const vals = Object.values(m); if (!vals.length) return false;
@@ -753,6 +768,38 @@ const events = aggregateDeadlines({ clients, tasks });
     }).map((c) => ({ id: `${c.id}-mission`, client: c, category: "Accueil", label: "Dossier d'accueil incomplet", date: new Date(), tone: "amber" }));
     return [...events, ...missionTasks].map((t) => ({ ...t, bucket: taskBucket(t.date) }));
   }, [myClients]);
+
+  // Tâches réelles (table "tasks") visibles : celles du portefeuille du dossier
+  // consulté (l'Admin, sans portefeuille attitré, voit tout).
+  const visibleTasksDb = useMemo(() => {
+    if (!tasksDb) return [];
+    if (isAdmin) return tasksDb;
+    return tasksDb.filter((t) => !t.portefeuille_id || t.portefeuille_id === myPortefeuilleId);
+  }, [tasksDb, isAdmin, myPortefeuilleId]);
+
+  const handleCreateTask = useCallback(async (payload) => {
+    const row = await createTask({ ...payload, portefeuille_id: payload.portefeuille_id || myPortefeuilleId || null, created_by: me });
+    if (row) {
+      logActivity({ clientId: row.client_id, portefeuilleId: row.portefeuille_id, type: "tache", message: activityMessages.tacheCreee(row.nom), auteurId: myRow?.id });
+    }
+    return row;
+  }, [myPortefeuilleId, me, myRow]);
+
+  const handleUpdateTask = useCallback(async (id, patch) => {
+    const row = await updateTask(id, patch);
+    if (row && patch.statut === "termine") {
+      logActivity({ clientId: row.client_id, portefeuilleId: row.portefeuille_id, type: "tache", message: activityMessages.tacheTerminee(row.nom), auteurId: myRow?.id });
+    }
+    return row;
+  }, [myRow]);
+
+  const handleCompleteTask = useCallback(async (task) => {
+    const row = await completeTask(task.id);
+    if (row) {
+      logActivity({ clientId: row.client_id, portefeuilleId: row.portefeuille_id, type: "tache", message: activityMessages.tacheTerminee(row.nom), auteurId: myRow?.id });
+    }
+    return row;
+  }, [myRow]);
 
   if (loading || !team) {
     return (
@@ -811,7 +858,7 @@ const events = aggregateDeadlines({ clients, tasks });
     <div style={S.appShell}>
       <GlobalStyle />
       <Sidebar view={view} setView={(v) => navTo(v)} me={me} meRole={myRole} mePortefeuille={myPortefeuille} team={team}
-        onLogout={onLogout} counts={computeCounts(myClients)}
+        onLogout={onLogout} counts={{ ...computeCounts(myClients), tachesActives: visibleTasksDb.filter((t) => t.statut !== "termine").length }}
         collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
       <div style={S.main}>
         <TopBar search={search} setSearch={setSearch} saveStatus={saveStatus} me={me} meColor={meColor}
@@ -850,6 +897,11 @@ const events = aggregateDeadlines({ clients, tasks });
               {view === "mission" && <MissionView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "regimes" && <RegimeChangeView clients={myClients} me={me} search={search} onUpdate={updateClient} />}
               {view === "fiscal" && <SuiviFiscalView clients={myClients} team={team} />}
+              {view === "mes-taches" && (
+                <TasksPage tasks={visibleTasksDb} clients={myClients} team={visibleTeam} me={me} myRow={myRow}
+                  onCreate={handleCreateTask} onUpdate={handleUpdateTask} onComplete={handleCompleteTask}
+                  onDelete={deleteTask} onOpenClient={openClientTab} />
+              )}
               {view === "planning" && <PlanningView tasks={myTasks} me={me} />}
               {view === "equipe" && (
                 <EquipeView team={team} portefeuilles={portefeuilles || []} clients={clients}
@@ -1210,6 +1262,7 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
     {
       id: "organisation", label: "Organisation & équipe",
       items: [
+        { id: "mes-taches", label: "Mes tâches", icon: ClipboardCheck, badge: counts.tachesActives, badgeTone: "amber" },
         { id: "planning", label: "Mon planning", icon: CalendarRange },
         { id: "equipe", label: "Équipe", icon: Settings2 },
       ],
@@ -2585,6 +2638,203 @@ const navBtnStyle = { width: 30, height: 30, borderRadius: 10, border: `1px soli
 /* ============================================================
    PLANNING (personnel)
    ============================================================ */
+/* ============================================================
+   MES TÂCHES — page dédiée au système de tâches (table "tasks")
+   Aujourd'hui / En retard / Cette semaine / À venir, avec filtres
+   collaborateur / client / statut / priorité.
+   ============================================================ */
+function TasksPage({ tasks, clients, team, me, myRow, onCreate, onUpdate, onComplete, onDelete, onOpenClient }) {
+  const [filterResponsable, setFilterResponsable] = useState("Tous");
+  const [filterClient, setFilterClient] = useState("Tous");
+  const [filterStatut, setFilterStatut] = useState("Toutes"); // "Toutes" ou un code TASK_STATUTS
+  const [filterPriorite, setFilterPriorite] = useState("Toutes");
+  const [showForm, setShowForm] = useState(false);
+
+  const clientById = useMemo(() => Object.fromEntries(clients.map((c) => [c.id, c])), [clients]);
+  const memberById = useMemo(() => Object.fromEntries((team || []).map((t) => [t.id, t])), [team]);
+
+  const filtered = useMemo(() => {
+    return (tasks || []).filter((t) => {
+      if (filterResponsable !== "Tous" && t.responsable_id !== filterResponsable) return false;
+      if (filterClient !== "Tous" && t.client_id !== filterClient) return false;
+      if (filterStatut !== "Toutes" && t.statut !== filterStatut) return false;
+      if (filterPriorite !== "Toutes" && t.priorite !== filterPriorite) return false;
+      return true;
+    });
+  }, [tasks, filterResponsable, filterClient, filterStatut, filterPriorite]);
+
+  const buckets = useMemo(() => {
+    const getDate = (t) => {
+      if (!t.date_echeance) return null;
+      const [y, m, d] = t.date_echeance.split("-").map(Number);
+      return new Date(y, m - 1, d);
+    };
+    const b = bucketizeDeadlines(filtered.filter((t) => t.statut !== "termine"), getDate);
+    // Tâches sans échéance : affichées à part, dans "À venir"
+    const sansEcheance = filtered.filter((t) => t.statut !== "termine" && !t.date_echeance);
+    b.avenir = [...b.avenir, ...sansEcheance.filter((t) => !b.avenir.includes(t))];
+    Object.keys(b).forEach((k) => { b[k] = [...new Set(b[k])].sort((x, y) => taskSortWeight(x) - taskSortWeight(y)); });
+    return b;
+  }, [filtered]);
+
+  const nbTermineesFiltrees = filtered.filter((t) => t.statut === "termine").length;
+
+  return (
+    <div>
+      <Reveal>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 18 }}>
+          <div>
+            <h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: 0 }}>Mes tâches</h1>
+            <p style={{ color: T.inkMuted, fontSize: 12.5, margin: "4px 0 0" }}>
+              {filtered.length - nbTermineesFiltrees} tâche(s) active(s), {nbTermineesFiltrees} terminée(s) sur la sélection.
+            </p>
+          </div>
+          <button onClick={() => setShowForm((v) => !v)} style={{
+            display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 10, border: "none",
+            background: T.navy, color: "#fff", fontWeight: 600, fontSize: 12.5, cursor: "pointer",
+          }}>
+            <Plus size={14} /> Nouvelle tâche
+          </button>
+        </div>
+      </Reveal>
+
+      {showForm && (
+        <NewTaskForm clients={clients} team={team} onCancel={() => setShowForm(false)}
+          onSubmit={async (payload) => { await onCreate(payload); setShowForm(false); }} />
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 18px" }}>
+        <select value={filterResponsable} onChange={(e) => setFilterResponsable(e.target.value)} className="filterField" style={filterFieldStyle}>
+          <option value="Tous">Collaborateur : Tous</option>
+          {(team || []).map((t) => <option key={t.id} value={t.id}>Collaborateur : {t.nom}</option>)}
+        </select>
+        <select value={filterClient} onChange={(e) => setFilterClient(e.target.value)} className="filterField" style={filterFieldStyle}>
+          <option value="Tous">Client : Tous</option>
+          {clients.map((c) => <option key={c.id} value={c.id}>Client : {c.nom}</option>)}
+        </select>
+        <select value={filterStatut} onChange={(e) => setFilterStatut(e.target.value)} className="filterField" style={filterFieldStyle}>
+          <option value="Toutes">Statut : Tous</option>
+          {TASK_STATUTS.map((s) => <option key={s.code} value={s.code}>Statut : {s.label}</option>)}
+        </select>
+        <select value={filterPriorite} onChange={(e) => setFilterPriorite(e.target.value)} className="filterField" style={filterFieldStyle}>
+          <option value="Toutes">Priorité : Toutes</option>
+          {TASK_PRIORITES.map((p) => <option key={p.code} value={p.code}>Priorité : {p.label}</option>)}
+        </select>
+      </div>
+
+      {["retard", "aujourdhui", "semaine", "avenir"].map((bucketKey) => (
+        <div key={bucketKey} style={{ marginBottom: 18 }}>
+          <Panel title={`${DEADLINE_BUCKET_LABELS[bucketKey]} (${buckets[bucketKey]?.length || 0})`}>
+            {!buckets[bucketKey]?.length ? <EmptyNote text="Rien ici." /> : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {buckets[bucketKey].map((t, i) => (
+                  <TaskRow key={t.id} task={t} index={i} client={clientById[t.client_id]} responsable={memberById[t.responsable_id]}
+                    onOpenClient={onOpenClient} onUpdate={onUpdate} onComplete={onComplete} onDelete={onDelete} />
+                ))}
+              </div>
+            )}
+          </Panel>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TaskRow({ task, index, client, responsable, onOpenClient, onUpdate, onComplete, onDelete }) {
+  const priorite = TASK_PRIORITE_BY_CODE[task.priorite];
+  const statut = TASK_STATUT_BY_CODE[task.statut];
+  const prioriteColor = PILOTAGE_COLORS[priorite?.color === "gray" ? "gray" : (task.priorite === "urgente" ? "red" : task.priorite === "haute" ? "orange" : "gray")];
+  const statutColor = PILOTAGE_COLORS[statut?.color] || PILOTAGE_COLORS.gray;
+  return (
+    <Reveal index={index} delay={0.05}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: T.radiusSm, border: `1px solid ${T.line}`, background: T.paper }}>
+        <button onClick={() => onComplete(task)} title="Marquer terminé" style={{
+          width: 20, height: 20, borderRadius: "50%", border: `1.5px solid ${T.green}`, background: "none", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}>
+          <Check size={12} color={T.green} />
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className={client ? "hoverRow clickable" : ""} onClick={() => client && onOpenClient(client.id)} style={{ fontWeight: 600, fontSize: 12.5, color: T.ink, display: "inline-block" }}>
+            {client ? client.nom : "Dossier non lié"}
+          </div>
+          <div style={{ fontSize: 11.5, color: T.inkMuted }}>{task.nom}{task.commentaire ? ` — ${task.commentaire}` : ""}</div>
+        </div>
+        {responsable && <RoleBadge role="Resp." name={responsable.nom} />}
+        <select value={task.statut} onChange={(e) => onUpdate(task.id, { statut: e.target.value })}
+          style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 999, border: "none", background: statutColor.bg, color: statutColor.text, cursor: "pointer" }}>
+          {TASK_STATUTS.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
+        </select>
+        <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: prioriteColor.bg, color: prioriteColor.text }}>{priorite?.label}</span>
+        {task.date_echeance && <span style={{ fontFamily: T.mono, fontSize: 10.5, color: T.inkMuted, whiteSpace: "nowrap" }}>{fmtFR(task.date_echeance)}</span>}
+        <button onClick={() => onDelete(task.id)} title="Supprimer" style={{ background: "none", border: "none", cursor: "pointer", color: T.inkMuted, display: "flex" }}>
+          <Trash2 size={13} />
+        </button>
+      </div>
+    </Reveal>
+  );
+}
+
+function NewTaskForm({ clients, team, onCancel, onSubmit }) {
+  const [nom, setNom] = useState("");
+  const [clientId, setClientId] = useState(clients[0]?.id || "");
+  const [responsableId, setResponsableId] = useState("");
+  const [priorite, setPriorite] = useState("normale");
+  const [dateEcheance, setDateEcheance] = useState("");
+  const [commentaire, setCommentaire] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!nom.trim()) return;
+    setSaving(true);
+    await onSubmit({
+      nom: nom.trim(), client_id: clientId || null, responsable_id: responsableId || null,
+      priorite, statut: "a_faire", date_echeance: dateEcheance || null, commentaire: commentaire.trim() || null,
+    });
+    setSaving(false);
+  };
+
+  return (
+    <Panel title="Nouvelle tâche">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        <FieldRow label="Nom de la tâche">
+          <input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex : Relancer client pour justificatifs"
+            style={{ ...filterFieldStyle, width: 220, border: `1px solid ${T.line}` }} />
+        </FieldRow>
+        <FieldRow label="Client">
+          <select value={clientId} onChange={(e) => setClientId(e.target.value)} style={filterFieldStyle}>
+            {clients.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+          </select>
+        </FieldRow>
+        <FieldRow label="Responsable">
+          <select value={responsableId} onChange={(e) => setResponsableId(e.target.value)} style={filterFieldStyle}>
+            <option value="">— Non assigné —</option>
+            {(team || []).map((t) => <option key={t.id} value={t.id}>{t.nom}</option>)}
+          </select>
+        </FieldRow>
+        <FieldRow label="Priorité">
+          <select value={priorite} onChange={(e) => setPriorite(e.target.value)} style={filterFieldStyle}>
+            {TASK_PRIORITES.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
+          </select>
+        </FieldRow>
+        <FieldRow label="Échéance">
+          <input type="date" value={dateEcheance} onChange={(e) => setDateEcheance(e.target.value)} style={{ ...filterFieldStyle, border: `1px solid ${T.line}` }} />
+        </FieldRow>
+      </div>
+      <FieldRow label="Commentaire">
+        <textarea value={commentaire} onChange={(e) => setCommentaire(e.target.value)} rows={2}
+          style={{ ...filterFieldStyle, width: "100%", border: `1px solid ${T.line}`, resize: "vertical", fontFamily: T.sans }} />
+      </FieldRow>
+      <div style={{ display: "flex", gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
+        <button onClick={onCancel} style={{ padding: "8px 14px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, color: T.inkSoft, cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>Annuler</button>
+        <button onClick={submit} disabled={saving || !nom.trim()} style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.navy, color: "#fff", cursor: "pointer", fontSize: 12.5, fontWeight: 600, opacity: saving || !nom.trim() ? 0.6 : 1 }}>
+          {saving ? "Création…" : "Créer la tâche"}
+        </button>
+      </div>
+    </Panel>
+  );
+}
+
 function PlanningView({ tasks, me }) {
   const [mode, setMode] = useState("semaine"); // jour | semaine | mois | année
   const now = new Date();
