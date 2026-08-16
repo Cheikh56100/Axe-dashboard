@@ -44,11 +44,6 @@ export function addMonthsISO(iso, months) {
 // ------------------------------------------------------------
 // Statut d'une échéance à partir de son nombre de jours restants
 // ------------------------------------------------------------
-// diffDays < 0                                → EN_RETARD
-// diffDays === 0                              → statut "urgent" (voir DEADLINE_URGENCY.URGENT)
-// diffDays === 1..joursPrioritaire            → "prioritaire"
-// diffDays <= joursAVenir                     → "a_venir"
-// diffDays > joursAVenir                      → "planifie"
 export const DEADLINE_URGENCY = {
   EN_RETARD:   { code: "en_retard",   label: "En retard",    color: "red"    },
   URGENT:      { code: "urgent",      label: "Urgent",       color: "red"    },
@@ -137,8 +132,6 @@ export function effectiveTvaStatus(client, moisKey, rules = DEFAULT_DEADLINE_RUL
 // ------------------------------------------------------------
 // Construction de la liste d'échéances fiscales/juridiques d'UN client
 // ------------------------------------------------------------
-// Retourne des objets { id, clientId, category, label, date, montant,
-// status: STATUS.*, urgency: DEADLINE_URGENCY.* } — prêts à afficher.
 export function buildClientDeadlines(client, rules = DEFAULT_DEADLINE_RULES, now = new Date()) {
   const events = [];
   const year = now.getFullYear();
@@ -151,7 +144,6 @@ export function buildClientDeadlines(client, rules = DEFAULT_DEADLINE_RULES, now
     events.push({ clientId: client.id, ...partial, urgency, status });
   };
 
-  // TVA CA3 — déclaration du mois M-1, exigible ce mois-ci
   if (client.tvaRegime === "CA3" && client.tvaExig) {
     const monthIdx = now.getMonth();
     const declaredMonthIdx = (monthIdx - 1 + 12) % 12;
@@ -164,7 +156,6 @@ export function buildClientDeadlines(client, rules = DEFAULT_DEADLINE_RULES, now
       });
     }
   }
-  // TVA CA12 — échéance annuelle en mai N+1
   if (client.tvaRegime === "CA12") {
     const statut = effectiveTvaStatus(client, "Mai", rules, now);
     if (statut !== "OK" && statut !== "NA") {
@@ -174,7 +165,6 @@ export function buildClientDeadlines(client, rules = DEFAULT_DEADLINE_RULES, now
       });
     }
   }
-  // IS — 4 acomptes trimestriels sur l'IS N-1
   if (isIsConcerne(client)) {
     const montant = Math.round((parseFloat(client.is.nMoins1) || 0) * rules.isAcomptePourcentage);
     [["mars", 2], ["juin", 5], ["sept", 8], ["dec", 11]].forEach(([key, m]) => {
@@ -187,7 +177,6 @@ export function buildClientDeadlines(client, rules = DEFAULT_DEADLINE_RULES, now
       }
     });
   }
-  // CFE — acompte juin + solde décembre sur la CFE N-1
   if (isCfeConcerne(client, rules)) {
     const montant = Math.round((parseFloat(client.cfe.nMoins1) || 0) * rules.cfeAcomptePourcentage);
     [["juin", 5, "acompte"], ["dec", 11, "solde"]].forEach(([key, m, label]) => {
@@ -200,7 +189,6 @@ export function buildClientDeadlines(client, rules = DEFAULT_DEADLINE_RULES, now
       }
     });
   }
-  // Acomptes TVA (régime CA12) — 55% juillet / 40% décembre sur la TVA N-1
   if (isTvaAcompteConcerne(client, rules)) {
     const nMoins1 = parseFloat(client.tvaAcompte?.nMoins1) || 0;
     [
@@ -216,7 +204,6 @@ export function buildClientDeadlines(client, rules = DEFAULT_DEADLINE_RULES, now
       }
     });
   }
-  // Bilan — clôture + délai si non finalisé
   if (client.dateCloture && client.bilan?.nonFinalise) {
     const echeanceISO = addMonthsISO(client.dateCloture, rules.bilanDelaiMois);
     const [by, bm, bd] = echeanceISO.split("-").map(Number);
@@ -225,7 +212,6 @@ export function buildClientDeadlines(client, rules = DEFAULT_DEADLINE_RULES, now
       date: new Date(by, bm - 1, bd),
     });
   }
-  // AGE/AGO — clôture + délai si non tenue
   if (client.dateCloture) {
     const latestYear = Object.keys(client.ageAgoHistory || {}).sort((a, b) => b - a)[0];
     const y = latestYear ? client.ageAgoHistory[latestYear] : null;
@@ -243,8 +229,7 @@ export function buildClientDeadlines(client, rules = DEFAULT_DEADLINE_RULES, now
 }
 
 // ------------------------------------------------------------
-// Transforme une TÂCHE (table "tasks") en objet "échéance" homogène,
-// pour pouvoir la mélanger avec les échéances fiscales dans les mêmes vues.
+// Transforme une TÂCHE (table "tasks") en objet "échéance" homogène
 // ------------------------------------------------------------
 export function buildTaskDeadline(task, rules = DEFAULT_DEADLINE_RULES, now = new Date()) {
   if (!task.date_echeance) return null;
@@ -264,9 +249,7 @@ export function buildTaskDeadline(task, rules = DEFAULT_DEADLINE_RULES, now = ne
 }
 
 // ------------------------------------------------------------
-// Agrège TOUTES les échéances (fiscales + tâches) pour l'ensemble
-// du cabinet, ou pour un client donné. Sert de source unique pour :
-// Dashboard, Vue Direction, Mes tâches, fiche client (onglet Échéances).
+// Agrège TOUTES les échéances (fiscales + tâches) pour l'ensemble du cabinet
 // ------------------------------------------------------------
 export function aggregateDeadlines({ clients = [], tasks = [], rules = DEFAULT_DEADLINE_RULES, now = new Date() }) {
   const fiscal = clients.flatMap((c) => buildClientDeadlines(c, rules, now));
