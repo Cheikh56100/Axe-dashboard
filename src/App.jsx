@@ -851,7 +851,10 @@ function CabinetApp({ session, onLogout }) {
                   onCreate={handleCreateTask} onUpdate={handleUpdateTask} onComplete={handleCompleteTask}
                   onDelete={deleteTask} onOpenClient={openClientTab} />
               )}
-              {view === "planning" && <PlanningView tasks={myTasks} me={me} />}
+            {view === "planning" && (
+  <PlanningView tasks={visibleTasksDb} clients={myClients} me={me}
+    onUpdate={handleUpdateTask} onOpenClient={openClientTab} />
+)}
               {view === "equipe" && (
                 <EquipeView team={team} portefeuilles={portefeuilles || []} clients={clients}
                   myRole={myRole} isAdmin={isAdmin} myPortefeuilleId={myPortefeuilleId}
