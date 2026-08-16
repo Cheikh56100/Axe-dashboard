@@ -7,8 +7,6 @@
    toujours un libellé explicite associé (accessibilité + clarté).
    ============================================================ */
 
-// Palette (reprend les couleurs déjà utilisées dans App.jsx -> objet T,
-// pour ne rien casser visuellement).
 export const PILOTAGE_COLORS = {
   green:  { text: "#16A34A", bg: "#DCFCE7", dot: "#16A34A" },
   orange: { text: "#D97706", bg: "#FEF3C7", dot: "#D97706" },
@@ -17,7 +15,6 @@ export const PILOTAGE_COLORS = {
   gray:   { text: "#94A3B8", bg: "#F1F5F9", dot: "#94A3B8" },
 };
 
-// Statuts génériques (dossiers, échéances, missions, TVA effective, etc.)
 export const STATUS = {
   OK:              { code: "ok",              label: "OK",              color: "green"  },
   A_TRAITER:       { code: "a_traiter",        label: "À traiter",       color: "orange" },
@@ -40,7 +37,6 @@ export function statusColorSet(codeOrStatus) {
   return PILOTAGE_COLORS[s?.color] || PILOTAGE_COLORS.gray;
 }
 
-// ---- Tâches ----
 export const TASK_STATUTS = [
   { code: "a_faire",  label: "À faire",  color: "gray"   },
   { code: "en_cours", label: "En cours", color: "indigo" },
@@ -57,7 +53,6 @@ export const TASK_PRIORITES = [
 ];
 export const TASK_PRIORITE_BY_CODE = Object.fromEntries(TASK_PRIORITES.map((p) => [p.code, p]));
 
-// Ordre de tri par défaut : bloqué/urgent d'abord, terminé en dernier
 export function taskSortWeight(task) {
   const statutWeight = { bloque: 0, en_cours: 1, a_faire: 2, termine: 3 }[task.statut] ?? 2;
   const prioriteWeight = 3 - (TASK_PRIORITE_BY_CODE[task.priorite]?.weight ?? 1);
