@@ -744,7 +744,8 @@ function CabinetApp({ session, onLogout }) {
 
   const myTasks = useMemo(() => {
     if (!myClients.length) return [];
-    const events = computeFiscalEvents(myClients);
+    import { aggregateDeadlines } from "./services/deadlines";
+const events = aggregateDeadlines({ clients, tasks });
     const missionTasks = myClients.filter((c) => {
       const m = c.mission; if (!m) return false;
       const vals = Object.values(m); if (!vals.length) return false;
