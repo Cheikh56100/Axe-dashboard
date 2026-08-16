@@ -1107,7 +1107,7 @@ function GlobalStyle() {
 const S = {
   appShell: { display: "flex", height: "100vh", width: "100%", background: T.paper, fontFamily: T.sans, color: T.ink, overflow: "hidden" },
   main: { flex: 1, display: "flex", flexDirection: "column", minWidth: 0 },
-  content: { flex: 1, overflowY: "auto", padding: "22px 28px 48px" },
+  content: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: "22px 28px 48px" },
 };
 
 /* ============================================================
@@ -1252,7 +1252,7 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
     };
     return (
       <div className={`h-full flex-shrink-0 bg-white text-inksoft flex flex-col py-5 px-3 border-r border-line transition-[width] duration-200 ${isCollapsed ? "w-[76px]" : "w-[258px]"}`}>
-        <div className={`flex items-center gap-2.5 pb-4 mb-3 border-b border-line ${isCollapsed ? "justify-center px-0" : "px-1.5"}`}>
+        <div className={`flex items-center gap-2.5 pb-4 mb-1 border-b border-line ${isCollapsed ? "justify-center px-0" : "px-1.5"}`}>
           <div className="w-8 h-8 rounded-[10px] bg-accent flex items-center justify-center shrink-0 font-extrabold text-white text-sm">A</div>
           {!isCollapsed && (
             <div>
@@ -1260,18 +1260,19 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
               <div className="font-mono text-[9.5px] text-inkmuted">Registre &amp; Pilotage</div>
             </div>
           )}
-          {!isMobile && (
-            <button onClick={() => setCollapsed(!collapsed)} title="Réduire / agrandir"
-              className={`ml-auto bg-transparent border-none text-inkmuted cursor-pointer hover:text-ink ${isCollapsed ? "hidden" : "flex"}`}>
-              <ChevronLeft size={14} />
-            </button>
-          )}
           {isMobile && (
             <button onClick={() => setMobileOpen?.(false)} className="ml-auto text-inkmuted hover:text-ink">
               <X size={18} />
             </button>
           )}
         </div>
+        {!isMobile && (
+          <button onClick={() => setCollapsed(!collapsed)} title={isCollapsed ? "Agrandir le menu" : "Réduire le menu"}
+            className={`flex items-center gap-1.5 mb-3 bg-transparent border border-line rounded-lg text-inkmuted cursor-pointer hover:text-ink hover:border-accent transition-colors ${isCollapsed ? "justify-center w-full py-1.5" : "justify-end px-2.5 py-1"}`}>
+            <ChevronLeft size={14} className={`transition-transform duration-200 ${isCollapsed ? "rotate-180" : ""}`} />
+            {!isCollapsed && <span className="text-[11px] font-medium">Réduire</span>}
+          </button>
+        )}
         <nav className="flex flex-col gap-1 overflow-y-auto">
           <NavButton it={{ id: "dashboard", label: "Vue d'ensemble", icon: LayoutGrid }} />
           <div className="h-1.5" />
@@ -1641,14 +1642,14 @@ function Dashboard({ myClients, tasks, me, onOpenClient, setView }) {
         </div>
       </Reveal>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4" style={{ marginBottom: 24 }}>
         <KpiCard index={0} label="Mes dossiers" value={counts.total} icon={Users} onClick={() => setView("clients")} />
         <KpiCard index={1} label="TVA en retard ce mois" value={counts.tvaAlert} icon={Receipt} tone={counts.tvaAlert ? "amber" : "green"} onClick={() => setView("tva")} />
         <KpiCard index={2} label="Bilans en retard" value={counts.bilanRetard} icon={FileWarning} tone={counts.bilanRetard ? "red" : "green"} onClick={() => setView("bilans")} />
         <KpiCard index={3} label="Accueils incomplets" value={counts.missionIncomplete} icon={ClipboardCheck} tone={counts.missionIncomplete ? "amber" : "green"} onClick={() => setView("mission")} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 18 }}>
+      <div className="grid grid-cols-1 md:grid-cols-[1.3fr_1fr] gap-4 md:gap-[18px]">
         <Panel index={4} title="Mes tâches">
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
             {["Toutes", "retard", "aujourdhui", "demain", "semaine", "mois", "trimestre"].map((b) => (
@@ -1916,11 +1917,12 @@ function ClientEditorPage({ client, team, onUpdate, onClose }) {
   return (
     <div>
       <Reveal>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 4 }}>
-          <div>
+        <div className="flex items-start justify-between gap-3 flex-wrap" style={{ marginBottom: 4 }}>
+          <div className="min-w-0">
             <div style={{ fontFamily: T.mono, fontSize: 11, color: T.inkMuted }}>{client.siren || "SIREN non renseigné"}</div>
             <input defaultValue={client.nom} onBlur={(e) => onUpdate(client.id, { nom: e.target.value || client.nom })}
-              style={{ fontFamily: T.serif, fontSize: 16, fontWeight: 700, color: T.ink, border: "none", background: "transparent", padding: "2px 0", margin: "2px 0 6px", minWidth: 260 }} />
+              className="w-full sm:min-w-[260px] sm:w-auto"
+              style={{ fontFamily: T.serif, fontSize: 16, fontWeight: 700, color: T.ink, border: "none", background: "transparent", padding: "2px 0", margin: "2px 0 6px" }} />
             <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
               <RoleBadge role="Collab." name={client.collab} />
               <RoleBadge role="Expert" name={client.expert} />
@@ -2686,28 +2688,30 @@ function TasksPage({ tasks, clients, team, me, myRow, onCreate, onUpdate, onComp
 function TaskRow({ task, index, client, responsable, onOpenClient, onUpdate, onComplete, onDelete }) {
   return (
     <Reveal index={index} delay={0.05}>
-      <div className="flex items-center gap-3 px-3.5 py-3 rounded-xl border border-line bg-white">
+      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 sm:gap-3 px-3 sm:px-3.5 py-3 rounded-xl border border-line bg-white">
         <button onClick={() => onComplete(task)} title="Marquer terminé"
           className="w-5 h-5 rounded-full border-[1.5px] border-badge-green-text flex items-center justify-center shrink-0 hover:bg-badge-green-bg transition-colors">
           <Check size={12} className="text-badge-green-text" />
         </button>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-[140px] sm:min-w-0">
           <div className={`font-semibold text-xs text-ink inline-block ${client ? "cursor-pointer hover:text-accent" : ""}`}
             onClick={() => client && onOpenClient(client.id)}>
             {client ? client.nom : "Dossier non lié"}
           </div>
           <div className="text-[11.5px] text-inkmuted">{task.nom}{task.commentaire ? ` — ${task.commentaire}` : ""}</div>
         </div>
-        {responsable && <RoleBadge role="Resp." name={responsable.nom} />}
-        <select value={task.statut} onChange={(e) => onUpdate(task.id, { statut: e.target.value })}
-          className="input-field !w-auto !py-1 !px-2 text-[10.5px] font-bold cursor-pointer">
-          {TASK_STATUTS.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
-        </select>
-        <Stamped tone={TASK_PRIORITE_TONE[task.priorite]} small>{TASK_PRIORITE_BY_CODE[task.priorite]?.label}</Stamped>
-        {task.date_echeance && <span className="font-mono text-[10.5px] text-inkmuted whitespace-nowrap">{fmtFR(task.date_echeance)}</span>}
-        <button onClick={() => onDelete(task.id)} title="Supprimer" className="text-inkmuted hover:text-badge-red-text transition-colors">
+        <button onClick={() => onDelete(task.id)} title="Supprimer" className="text-inkmuted hover:text-badge-red-text transition-colors order-2 sm:order-none">
           <Trash2 size={13} />
         </button>
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto pl-[30px] sm:pl-0 order-3 sm:order-none">
+          {responsable && <RoleBadge role="Resp." name={responsable.nom} />}
+          <select value={task.statut} onChange={(e) => onUpdate(task.id, { statut: e.target.value })}
+            className="input-field !w-auto !py-1 !px-2 text-[10.5px] font-bold cursor-pointer">
+            {TASK_STATUTS.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
+          </select>
+          <Stamped tone={TASK_PRIORITE_TONE[task.priorite]} small>{TASK_PRIORITE_BY_CODE[task.priorite]?.label}</Stamped>
+          {task.date_echeance && <span className="font-mono text-[10.5px] text-inkmuted whitespace-nowrap">{fmtFR(task.date_echeance)}</span>}
+        </div>
       </div>
     </Reveal>
   );
