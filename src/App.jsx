@@ -6,7 +6,7 @@ import {
   Filter, ArrowUpRight, CircleDot, Loader2, RefreshCw, History,
   ChevronUp, CalendarDays, CalendarRange, Settings2, Trash2,
   Pencil, ChevronLeft, ShieldCheck, Home, LogOut, Mail, Lock, UserRound,
-  Phone, Briefcase, UserCheck, Wallet, ShieldAlert, Menu, Bell
+  Phone, Briefcase, UserCheck, Wallet, ShieldAlert, Menu, Bell, Clock3
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { motion } from "framer-motion";
@@ -1102,6 +1102,19 @@ function CabinetApp({ session, onLogout }) {
     return [...events, ...missionTasks].map((t) => ({ ...t, bucket: taskBucket(t.date) }));
   }, [myClients]);
 
+  // Même échéances, mais mises en forme comme des "tâches" pour s'afficher dans la page Mes tâches
+  const autoTasksForPage = useMemo(() => myTasks.map((t) => ({
+    id: `auto-${t.id}`,
+    isAuto: true,
+    client_id: t.client.id,
+    nom: t.label,
+    commentaire: t.category,
+    statut: "a_faire",
+    priorite: t.tone === "red" ? "urgente" : t.tone === "amber" ? "haute" : "normale",
+    date_echeance: t.date ? t.date.toISOString().slice(0, 10) : null,
+    responsable_id: null,
+  })), [myTasks]);
+
   // Tâches réelles (table "tasks") visibles : celles du portefeuille du dossier
   // consulté (l'Admin, sans portefeuille attitré, voit tout).
   const visibleTasksDb = useMemo(() => {
@@ -1191,7 +1204,7 @@ function CabinetApp({ session, onLogout }) {
     <div style={S.appShell}>
       <GlobalStyle />
       <Sidebar view={view} setView={(v) => navTo(v)} me={me} meRole={myRole} mePortefeuille={myPortefeuille} team={team}
-        onLogout={onLogout} counts={{ ...computeCounts(myClients), tachesActives: visibleTasksDb.filter((t) => t.statut !== "termine").length }}
+        onLogout={onLogout} counts={{ ...computeCounts(myClients), tachesActives: visibleTasksDb.filter((t) => t.statut !== "termine").length + autoTasksForPage.length }}
         collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed}
         mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen} />
       <div style={S.main}>
@@ -1259,7 +1272,7 @@ function CabinetApp({ session, onLogout }) {
 {view === "social" && <CadreSocialView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "fiscal" && <SuiviFiscalView clients={myClients} team={team} />}
               {view === "mes-taches" && (
-                <TasksPage tasks={visibleTasksDb} clients={myClients} team={visibleTeam} me={me} myRow={myRow}
+                <TasksPage tasks={[...visibleTasksDb, ...autoTasksForPage]} clients={myClients} team={visibleTeam} me={me} myRow={myRow}
                   onCreate={handleCreateTask} onUpdate={handleUpdateTask} onComplete={handleCompleteTask}
                   onDelete={deleteTask} onOpenClient={openClientTab} />
               )}
@@ -3716,10 +3729,16 @@ function TaskRow({ task, index, client, responsable, onOpenClient, onUpdate, onC
   return (
     <Reveal index={index} delay={0.05}>
       <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 sm:gap-3 px-3 sm:px-3.5 py-3 rounded-xl border border-line bg-white">
-        <button onClick={() => onComplete(task)} title="Marquer terminé"
-          className="w-5 h-5 rounded-full border-[1.5px] border-badge-green-text flex items-center justify-center shrink-0 hover:bg-badge-green-bg transition-colors">
-          <Check size={12} className="text-badge-green-text" />
-        </button>
+        {task.isAuto ? (
+          <div className="w-5 h-5 rounded-full border-[1.5px] border-line flex items-center justify-center shrink-0" title="Échéance calculée automatiquement">
+            <Clock3 size={11} className="text-inkmuted" />
+          </div>
+        ) : (
+          <button onClick={() => onComplete(task)} title="Marquer terminé"
+            className="w-5 h-5 rounded-full border-[1.5px] border-badge-green-text flex items-center justify-center shrink-0 hover:bg-badge-green-bg transition-colors">
+            <Check size={12} className="text-badge-green-text" />
+          </button>
+        )}
         <div className="flex-1 min-w-[140px] sm:min-w-0">
           <div className={`font-semibold text-xs text-ink inline-block ${client ? "cursor-pointer hover:text-accent" : ""}`}
             onClick={() => client && onOpenClient(client.id)}>
@@ -3727,15 +3746,21 @@ function TaskRow({ task, index, client, responsable, onOpenClient, onUpdate, onC
           </div>
           <div className="text-[11.5px] text-inkmuted">{task.nom}{task.commentaire ? ` — ${task.commentaire}` : ""}</div>
         </div>
-        <button onClick={() => onDelete(task.id)} title="Supprimer" className="text-inkmuted hover:text-badge-red-text transition-colors order-2 sm:order-none">
-          <Trash2 size={13} />
-        </button>
+        {!task.isAuto && (
+          <button onClick={() => onDelete(task.id)} title="Supprimer" className="text-inkmuted hover:text-badge-red-text transition-colors order-2 sm:order-none">
+            <Trash2 size={13} />
+          </button>
+        )}
         <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto pl-[30px] sm:pl-0 order-3 sm:order-none">
           {responsable && <RoleBadge role="Resp." name={responsable.nom} />}
-          <select value={task.statut} onChange={(e) => onUpdate(task.id, { statut: e.target.value })}
-            className="input-field !w-auto !py-1 !px-2 text-[10.5px] font-bold cursor-pointer">
-            {TASK_STATUTS.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
-          </select>
+          {task.isAuto ? (
+            <Stamped tone="neutral" small>Auto</Stamped>
+          ) : (
+            <select value={task.statut} onChange={(e) => onUpdate(task.id, { statut: e.target.value })}
+              className="input-field !w-auto !py-1 !px-2 text-[10.5px] font-bold cursor-pointer">
+              {TASK_STATUTS.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
+            </select>
+          )}
           <Stamped tone={TASK_PRIORITE_TONE[task.priorite]} small>{TASK_PRIORITE_BY_CODE[task.priorite]?.label}</Stamped>
           {task.date_echeance && <span className="font-mono text-[10.5px] text-inkmuted whitespace-nowrap">{fmtFR(task.date_echeance)}</span>}
         </div>
