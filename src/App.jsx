@@ -349,7 +349,7 @@ function computeFiscalEvents(clients) {
         });
       }
     }
-    // AGE/AGO — approbation ~6 mois après clôture si non tenue
+   // AGE/AGO — approbation ~6 mois après clôture si non tenue
     if (c.dateCloture) {
       const latestYear = Object.keys(c.ageAgoHistory || {}).sort((a, b) => b - a)[0];
       const y = latestYear ? c.ageAgoHistory[latestYear] : null;
@@ -359,10 +359,11 @@ function computeFiscalEvents(clients) {
         events.push({
           id: `${c.id}-ago-${latestYear}`, client: c, category: "AGO",
           label: `Approbation des comptes ${latestYear}`, date: new Date(ay, am - 1, ad), done: false, tone: "amber",
-       });
-        }
-      });
+        });
+      }
     }
+  });
+
   return events;
 }
 
