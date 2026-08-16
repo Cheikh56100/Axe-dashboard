@@ -2708,15 +2708,35 @@ function NotesTab({ client, me, onUpdate }) {
    TVA GRID VIEW
    ============================================================ */
 function TvaGrid({ clients, search, roleFilter, setRoleFilter, regimeFilter, setRegimeFilter, me, onCycle, onUpdate, onOpenClient }) {
-  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me, regimeFilter).filter(c => c.tvaRegime), [clients, search, roleFilter, me, regimeFilter]);
+  const [collabFilter, setCollabFilter] = useState("Tous");
+  const [sortBy, setSortBy] = useState("nom"); // nom | retards
+  const baseFiltered = useMemo(() => filterClients(clients, search, roleFilter, me, regimeFilter).filter(c => c.tvaRegime), [clients, search, roleFilter, me, regimeFilter]);
+  const collabOptions = useMemo(() => Array.from(new Set(clients.map((c) => c.collab).filter(Boolean))).sort(), [clients]);
+  const countRetards = (c) => MOIS_ORDER.filter((m) => effectiveTvaStatus(c, m) === "RETARD").length;
+  const filtered = useMemo(() => {
+    let out = collabFilter === "Tous" ? baseFiltered : baseFiltered.filter((c) => c.collab === collabFilter);
+    out = [...out].sort((a, b) => sortBy === "retards" ? countRetards(b) - countRetards(a) : a.nom.localeCompare(b.nom));
+    return out;
+  }, [baseFiltered, collabFilter, sortBy]);
   return (
     <div>
       <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 15, fontWeight: 600, color: T.ink, margin: "0 0 5px" }}>Échéances TVA</h1></Reveal>
       <p style={{ color: T.inkMuted, fontSize: 11, marginTop: 0, marginBottom: 16, lineHeight: 1.5 }}>
         Cliquez une cellule : vide → <Stamped tone="amber" small>Fait</Stamped> → <Stamped tone="green" small>OK</Stamped> → <Stamped tone="neutral" small>N/A</Stamped>. Date limite dépassée sans saisie → <Stamped tone="red" small>Retard</Stamped> automatique.
         {" "}CA3 : déclaration du mois M exigible en M+1. CA12 : une seule déclaration, en Mai N+1.
+        {" "}Passer une cellule à <Stamped tone="amber" small>Fait</Stamped> notifie le chef de mission du dossier ; il confirme en la faisant passer à <Stamped tone="green" small>OK</Stamped>.
       </p>
       <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter} />
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <select value={collabFilter} onChange={(e) => setCollabFilter(e.target.value)} className="input-field !py-1.5 !w-auto text-xs" title="Filtrer par collaborateur">
+          <option value="Tous">Collaborateur : Tous</option>
+          {collabOptions.map((c) => <option key={c} value={c}>Collaborateur : {c}</option>)}
+        </select>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="input-field !py-1.5 !w-auto text-xs" title="Trier">
+          <option value="nom">Trier : Nom (A→Z)</option>
+          <option value="retards">Trier : Nb de retards (décroissant)</option>
+        </select>
+      </div>
       <div className="scrollbar" style={{ overflowX: "auto", background: T.card, border: `1px solid ${T.line}`, borderRadius: 16, boxShadow: T.shadowSm }}>
         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11.5 }}>
           <thead><tr><th style={thStyle}>Dossier</th><th style={thStyle}>Régime</th><th style={{ ...thStyle, textAlign: "center" }}>Éxig.</th>{MOIS_ORDER.map((m) => <th key={m} style={{ ...thStyle, textAlign: "center" }}>{m}</th>)}</tr></thead>
