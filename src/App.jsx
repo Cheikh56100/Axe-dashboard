@@ -47,6 +47,9 @@ const DEFAULT_TEAM = ["Cheikh", "Soli", "Emilie", "Jacques"].map((nom, i) => ({
 const MOIS_ORDER = ["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sept","Oct","Nov","Déc"];
 const MOIS_FULL = { Jan:"Janvier",Fév:"Février",Mar:"Mars",Avr:"Avril",Mai:"Mai",Juin:"Juin",Juil:"Juillet",Août:"Août",Sept:"Septembre",Oct:"Octobre",Nov:"Novembre",Déc:"Décembre" };
 const REGIMES_TVA = ["CA3", "CA12", "FRANCHISE"];
+const QUARTER_END_MONTHS = ["Mar", "Juin", "Sept", "Déc"]; // fins de trimestre civil, pour la périodicité CA3 trimestrielle
+const TVA_PERIODICITES = ["mensuelle", "trimestrielle"];
+const TVA_PERIODICITE_LABELS = { mensuelle: "Mensuelle", trimestrielle: "Trimestrielle" };
 
 function currentMonthKey() { return MOIS_ORDER[new Date().getMonth()]; }
 function todayISO() { return new Date().toISOString().slice(0, 10); }
@@ -82,7 +85,8 @@ function migrateClients(list) {
     const next = { ...c };
     if (!next.id) next.id = next.siren ? `siren-${next.siren}` : `c-${i}-${next.nom || "x"}`;
     if (!next.portefeuilleId) next.portefeuilleId = "axe"; // valeur par défaut pour les données d'origine (avant multi-cabinets)
-    if (!next.statutDossier) next.statutDossier = "actif"; // Actif / Inactif
+   if (!next.statutDossier) next.statutDossier = "actif"; // Actif / Inactif
+    if (next.tvaRegime === "CA3" && !next.tvaPeriodicite) next.tvaPeriodicite = "mensuelle"; // valeur par défaut = comportement historique
     if (!next.expert) next.expert = "";
     if (!next.chefMission) next.chefMission = "";
     if (!next.dateCloture) next.dateCloture = "";
@@ -217,8 +221,14 @@ function effectiveTvaStatus(client, moisKey) {
     return deadline.getTime() < now.getTime() ? "RETARD" : "";
   }
 
-  const exig = parseInt(client.tvaExig, 10);
+ const exig = parseInt(client.tvaExig, 10);
   if (!exig) return "";
+  // Régime CA3 en périodicité trimestrielle : seules les échéances de fin de
+  // trimestre civil (Mars, Juin, Septembre, Décembre) sont concernées ; les
+  // autres mois de la grille sont non applicables.
+  if (client.tvaRegime === "CA3" && client.tvaPeriodicite === "trimestrielle" && !QUARTER_END_MONTHS.includes(moisKey)) {
+    return "NA";
+  }
   const monthIdx = MOIS_ORDER.indexOf(moisKey);
   const now = new Date();
   // Régime CA3 : la TVA du mois M est déclarée en M+1 (ex. la TVA de juillet
@@ -239,18 +249,22 @@ function computeFiscalEvents(clients) {
   const year = now.getFullYear();
 
   clients.forEach((c) => {
-    // TVA CA3 — la déclaration due ce mois-ci porte sur le mois précédent (M+1)
+   // TVA CA3 — la déclaration due ce mois-ci porte sur le mois précédent (M+1)
     if (c.tvaRegime === "CA3" && c.tvaExig) {
       const monthIdx = now.getMonth();
       const declaredMonthIdx = (monthIdx - 1 + 12) % 12;
-      const status = effectiveTvaStatus(c, MOIS_ORDER[declaredMonthIdx]);
-      if (status !== "OK" && status !== "NA") {
-        events.push({
-          id: `${c.id}-tva-${declaredMonthIdx}`, client: c, category: "TVA",
-          label: `TVA ${MOIS_FULL[MOIS_ORDER[declaredMonthIdx]]}`,
-          date: new Date(year, monthIdx, parseInt(c.tvaExig, 10) || 20),
-          done: false, tone: tvaTone(status),
-        });
+      const declaredMonthKey = MOIS_ORDER[declaredMonthIdx];
+      const isRelevantMonth = c.tvaPeriodicite !== "trimestrielle" || QUARTER_END_MONTHS.includes(declaredMonthKey);
+      if (isRelevantMonth) {
+        const status = effectiveTvaStatus(c, declaredMonthKey);
+        if (status !== "OK" && status !== "NA") {
+          events.push({
+            id: `${c.id}-tva-${declaredMonthIdx}`, client: c, category: "TVA",
+            label: `TVA ${MOIS_FULL[declaredMonthKey]}${c.tvaPeriodicite === "trimestrielle" ? " (trim.)" : ""}`,
+            date: new Date(year, monthIdx, parseInt(c.tvaExig, 10) || 20),
+            done: false, tone: tvaTone(status),
+          });
+        }
       }
     }
     // TVA CA12 — une seule échéance annuelle, en Mai N+1
@@ -1943,7 +1957,7 @@ function ClientEditorPage({ client, team, me, onUpdate, onClose }) {
               <RoleBadge role="Collab." name={client.collab} />
               <RoleBadge role="Expert" name={client.expert} />
               <RoleBadge role="Chef de mission" name={client.chefMission} />
-              {client.tvaRegime && <span style={{ fontFamily: T.mono, fontSize: 11, color: T.navy, fontWeight: 700, background: T.navySoft, padding: "2px 9px", borderRadius: 999 }}>{client.tvaRegime}</span>}
+              {client.tvaRegime && <span style={{ fontFamily: T.mono, fontSize: 11, color: T.navy, fontWeight: 700, background: T.navySoft, padding: "2px 9px", borderRadius: 999 }}>{client.tvaRegime}{client.tvaRegime === "CA3" && client.tvaPeriodicite ? ` · ${TVA_PERIODICITE_LABELS[client.tvaPeriodicite]}` : ""}</span>}
               <button
                 onClick={() => onUpdate(client.id, { statutDossier: client.statutDossier === "inactif" ? "actif" : "inactif" })}
                 className="statusToggle"
@@ -1990,11 +2004,11 @@ function FieldRow({ label, children }) {
     <span style={{ fontSize: 12, color: T.inkMuted }}>{label}</span><div>{children}</div>
   </div>;
 }
-function SelectPill({ value, options, onChange, allowEmpty = true }) {
+function SelectPill({ value, options, onChange, allowEmpty = true, labels }) {
   return (
     <select value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 600, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, color: T.ink }}>
       {allowEmpty && <option value="">—</option>}
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      {options.map((o) => <option key={o} value={o}>{labels?.[o] || o}</option>)}
     </select>
   );
 }
@@ -2079,7 +2093,12 @@ function TvaTab({ client, onUpdate }) {
   const currentStatus = client.tvaRegime === "CA12" ? effectiveTvaStatus(client, "Mai") : effectiveTvaStatus(client, currentMonthKey());
   return (
     <div>
-      <FieldRow label="Régime TVA"><SelectPill value={client.tvaRegime} options={REGIMES_TVA} onChange={(v) => onUpdate(client.id, { tvaRegime: v })} /></FieldRow>
+      <FieldRow label="Régime TVA"><SelectPill value={client.tvaRegime} options={REGIMES_TVA} onChange={(v) => onUpdate(client.id, { tvaRegime: v, tvaPeriodicite: v === "CA3" ? (client.tvaPeriodicite || "mensuelle") : client.tvaPeriodicite })} /></FieldRow>
+      {client.tvaRegime === "CA3" && (
+        <FieldRow label="Périodicité de déclaration">
+          <SelectPill value={client.tvaPeriodicite || "mensuelle"} options={TVA_PERIODICITES} labels={TVA_PERIODICITE_LABELS} allowEmpty={false} onChange={(v) => onUpdate(client.id, { tvaPeriodicite: v })} />
+        </FieldRow>
+      )}
       <FieldRow label="Jour limite de déclaration">
         <input type="number" min="1" max="31" defaultValue={client.tvaExig || ""} placeholder="ex. 19"
           onBlur={(e) => onUpdate(client.id, { tvaExig: e.target.value ? parseInt(e.target.value, 10) : "" })}
@@ -2092,7 +2111,9 @@ function TvaTab({ client, onUpdate }) {
         {client.tvaRegime === "CA12"
           ? "Régime CA12 : une seule déclaration annuelle, exigible en Mai N+1."
           : client.tvaRegime === "CA3"
-            ? "Régime CA3 : la TVA d'un mois donné est déclarée le mois suivant (M+1)."
+            ? client.tvaPeriodicite === "trimestrielle"
+              ? "Régime CA3 trimestriel : une déclaration à la fin de chaque trimestre civil (Mars, Juin, Septembre, Décembre), exigible le mois suivant (M+1). Les autres mois sont non applicables."
+              : "Régime CA3 mensuel : la TVA d'un mois donné est déclarée le mois suivant (M+1)."
             : "Sélectionnez un régime TVA pour activer le suivi des échéances."}
         {" "}Le suivi mois par mois (Fait / OK / N/A) se gère depuis l'écran <strong>TVA — CA3/CA12</strong>.
       </div>
@@ -2235,11 +2256,14 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, regimeFilter, set
           <tbody>
             {filtered.map((c) => {
               const isCa12 = c.tvaRegime === "CA12";
+              const isCa3Trim = c.tvaRegime === "CA3" && c.tvaPeriodicite === "trimestrielle";
               return (
               <tr key={c.id} className="hoverRow">
                 <td className={onOpenClient ? "clickable" : undefined} onClick={() => onOpenClient && onOpenClient(c.id)}
                   style={{ ...tdStyle, fontWeight: 600, whiteSpace: "nowrap", color: onOpenClient ? T.navy : T.ink }}>{c.nom}</td>
-                <td style={{ ...tdStyle, fontFamily: T.mono, color: T.inkMuted }}>{c.tvaRegime}</td>
+                <td style={{ ...tdStyle, fontFamily: T.mono, color: T.inkMuted }}>
+                  {c.tvaRegime}{isCa3Trim && <span style={{ marginLeft: 4, fontSize: 9.5, color: T.navy, background: T.navySoft, padding: "1px 5px", borderRadius: 999 }}>Trim.</span>}
+                </td>
                 <td style={{ ...tdStyle, textAlign: "center" }}>
                   <input type="number" min="1" max="31" defaultValue={c.tvaExig || ""} placeholder="—"
                     onBlur={(e) => onUpdate(c.id, { tvaExig: e.target.value ? parseInt(e.target.value, 10) : "" })}
@@ -2247,6 +2271,9 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, regimeFilter, set
                 </td>
                 {MOIS_ORDER.map((m) => {
                   if (isCa12 && m !== "Mai") {
+                    return <td key={m} style={{ ...tdStyle, textAlign: "center", color: T.inkMuted, opacity: 0.45 }}>—</td>;
+                  }
+                  if (isCa3Trim && !QUARTER_END_MONTHS.includes(m)) {
                     return <td key={m} style={{ ...tdStyle, textAlign: "center", color: T.inkMuted, opacity: 0.45 }}>—</td>;
                   }
                   const manual = (c.tvaMois?.[m] || "").toUpperCase(); const display = effectiveTvaStatus(c, m); const tone = tvaTone(display);
