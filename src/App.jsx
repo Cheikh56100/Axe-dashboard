@@ -251,6 +251,58 @@ const SEED_AIDES_SECTEUR = {
   },
   autres: { aides: [], obligations: [] },
 };
+/* ============================================================
+   ACTUALITÉS EN DIRECT PAR SECTEUR — Google Actualités RSS
+   + flux officiel Service-Public.fr (via proxy rss2json, gratuit sans clé)
+   ============================================================ */
+const SECTEUR_NEWS_QUERIES = {
+  restauration: "aide dispositif restauration CHR France",
+  batiment: "aide RGE rénovation bâtiment BTP France",
+  beaute: "aide dispositif coiffure esthétique entreprise France",
+  sante: "actualité professionnels de santé libéral France",
+  commerce_detail: "aide commerce de détail commerçants France",
+  commerce_gros: "actualité commerce de gros France",
+  informatique: "aide crédit impôt innovation entreprises informatique France",
+  securite_nettoyage: "actualité sécurité privée CNAPS nettoyage entreprises France",
+  transport: "aide transport routier entreprises France",
+  immobilier: "actualité holding patrimoine SCI fiscalité France",
+  conseil: "actualité conseil entreprises aide Bpifrance France",
+  automobile: "aide garage automobile entretien réparation France",
+  autres: "actualité aide entreprise PME France",
+};
+const OFFICIAL_PRO_FEED = "https://www.service-public.fr/abonnements/rss/actu-actu-pro.rss";
+const RSS2JSON_ENDPOINT = "https://api.rss2json.com/v1/api.json";
+
+function buildGoogleNewsRssUrl(query) {
+  return `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=fr&gl=FR&ceid=FR:fr`;
+}
+async function fetchRssFeed(rssUrl, count = 6) {
+  const url = `${RSS2JSON_ENDPOINT}?rss_url=${encodeURIComponent(rssUrl)}&count=${count}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Erreur réseau (${res.status})`);
+  const json = await res.json();
+  if (json.status !== "ok") throw new Error(json.message || "Flux indisponible");
+  return (json.items || []).map((it) => ({
+    title: it.title,
+    link: it.link,
+    date: it.pubDate,
+    source: json.feed?.title || "",
+  }));
+}
+// Récupère les actus d'un secteur : Google Actualités (ciblé) + Service-Public.fr (officiel, générique)
+async function fetchSecteurNews(secteurId) {
+  const query = SECTEUR_NEWS_QUERIES[secteurId] || SECTEUR_NEWS_QUERIES.autres;
+  const results = await Promise.allSettled([
+    fetchRssFeed(buildGoogleNewsRssUrl(query), 5),
+    fetchRssFeed(OFFICIAL_PRO_FEED, 3),
+  ]);
+  const items = results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+  items.sort((a, b) => new Date(b.date) - new Date(a.date));
+  if (items.length === 0 && results.every((r) => r.status === "rejected")) {
+    throw new Error("Tous les flux sont indisponibles pour le moment.");
+  }
+  return items.slice(0, 6);
+}
 
 async function loadSecteurContentFromSupabase() {
   const { data, error } = await supabase.from("secteur_content").select("secteur_id, aides, obligations, updated_at, updated_by");
@@ -2749,6 +2801,19 @@ function AidesSecteurView({ content, canEdit, onUpdate }) {
   const [active, setActive] = useState(SECTEURS_ACTIVITE[0].id);
   const data = content[active] || { aides: [], obligations: [] };
 
+  // Cache par secteur : { loading, error, items } — évite de re-fetcher à chaque clic d'onglet
+  const [newsCache, setNewsCache] = useState({});
+  useEffect(() => {
+    if (newsCache[active]?.items?.length || newsCache[active]?.loading) return;
+    let cancelled = false;
+    setNewsCache((prev) => ({ ...prev, [active]: { loading: true, error: null, items: prev[active]?.items || [] } }));
+    fetchSecteurNews(active)
+      .then((items) => { if (!cancelled) setNewsCache((prev) => ({ ...prev, [active]: { loading: false, error: null, items } })); })
+      .catch((err) => { if (!cancelled) setNewsCache((prev) => ({ ...prev, [active]: { loading: false, error: err.message, items: [] } })); });
+    return () => { cancelled = true; };
+  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+  const activeNews = newsCache[active] || { loading: false, error: null, items: [] };
+
   const addLine = (field) => onUpdate(active, { [field]: [...(data[field] || []), ""] });
   const editLine = (field, idx, v) => {
     const arr = [...(data[field] || [])]; arr[idx] = v; onUpdate(active, { [field]: arr });
@@ -2804,6 +2869,29 @@ function AidesSecteurView({ content, canEdit, onUpdate }) {
       {renderList("aides", "Aides & dispositifs", T.navy)}
       <div style={{ height: 14 }} />
       {renderList("obligations", "Obligations réglementaires", T.gold)}
+      <div style={{ height: 14 }} />
+      <Panel title="Actualités en direct (Google Actualités + Service-Public.fr)">
+        {activeNews.loading && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 4px", color: T.inkMuted, fontSize: 12.5 }}>
+            <Loader2 size={14} className="spin" /> Chargement des actualités…
+          </div>
+        )}
+        {!activeNews.loading && activeNews.error && (
+          <EmptyNote text={`Flux indisponible pour le moment (${activeNews.error})`} />
+        )}
+        {!activeNews.loading && !activeNews.error && activeNews.items.length === 0 && (
+          <EmptyNote text="Aucune actualité récente trouvée pour ce secteur." />
+        )}
+        {!activeNews.loading && activeNews.items.map((it, idx) => (
+          <a key={idx} href={it.link} target="_blank" rel="noopener noreferrer"
+            style={{ display: "block", padding: "8px 4px", borderBottom: `1px solid ${T.line}`, textDecoration: "none" }}>
+            <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{it.title}</div>
+            <div style={{ fontSize: 11, color: T.inkMuted, marginTop: 2 }}>
+              {it.source}{it.date ? ` · ${new Date(it.date).toLocaleDateString("fr-FR")}` : ""}
+            </div>
+          </a>
+        ))}
+      </Panel>
       {content[active]?.updatedAt && (
         <div style={{ fontSize: 11, color: T.inkMuted, marginTop: 14 }}>
           Dernière mise à jour : {new Date(content[active].updatedAt).toLocaleDateString("fr-FR")}{content[active].updatedBy ? ` par ${content[active].updatedBy}` : ""}
