@@ -106,6 +106,9 @@ function migrateClients(list) {
     }
     if (!next.regimeHistory) next.regimeHistory = [];
     if (next.tvaExig == null) next.tvaExig = "";
+    if (!next.honoraires) next.honoraires = { montant: "", historique: [] };
+    if (!next.social) next.social = { concerne: false, effectif: "", cabinetPaie: "", periodicite: "Mensuelle", odMois: {} };
+    if (!next.notesCollab) next.notesCollab = [];
     return next;
   });
 }
@@ -822,7 +825,7 @@ function CabinetApp({ session, onLogout }) {
             // interne (onglet secondaire "Infos / TVA / Bilan…") sont ainsi réinitialisés
             // avec les données du dossier sélectionné, au lieu de rester figés sur
             // l'ancien dossier affiché.
-            <ClientEditorPage key={activeClient.id} client={activeClient} team={visibleTeam} onUpdate={updateClient}
+            <ClientEditorPage key={activeClient.id} client={activeClient} team={visibleTeam} me={me} onUpdate={updateClient}
               onClose={() => closeClientTab(activeClient.id)} />
           ) : (
             <>
@@ -845,6 +848,8 @@ function CabinetApp({ session, onLogout }) {
               {view === "age" && <AgeAgoView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "mission" && <MissionView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "regimes" && <RegimeChangeView clients={myClients} me={me} search={search} onUpdate={updateClient} />}
+              {view === "honoraires" && <HonorairesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
+{view === "social" && <CadreSocialView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "fiscal" && <SuiviFiscalView clients={myClients} team={team} />}
               {view === "mes-taches" && (
                 <TasksPage tasks={visibleTasksDb} clients={myClients} team={visibleTeam} me={me} myRow={myRow}
@@ -1187,13 +1192,14 @@ function PendingScreen({ row, onLogout }) {
    SIDEBAR
    ============================================================ */
 function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, counts, collapsed, setCollapsed, mobileOpen, setMobileOpen }) {
-  const GROUPS = [
+    const GROUPS = [
     {
       id: "clients-accueil", label: "Gestion clients & accueil",
       items: [
         { id: "clients", label: "Registre clients", icon: Users, badge: counts.total },
         { id: "mission", label: "Dossiers en accueil", icon: ClipboardCheck, badge: counts.missionIncomplete, badgeTone: "amber" },
         { id: "regimes", label: "Changements de régime", icon: RefreshCw },
+        { id: "honoraires", label: "Honoraires", icon: Wallet },
       ],
     },
     {
@@ -1209,6 +1215,12 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
       id: "juridique", label: "Juridique",
       items: [
         { id: "age", label: "Assemblées (AGE / AGO)", icon: Building2, badge: counts.ageAlert, badgeTone: "amber" },
+      ],
+    },
+    {
+      id: "social", label: "Social",
+      items: [
+        { id: "social", label: "Suivi social (OD salaires)", icon: UserCheck },
       ],
     },
     {
@@ -1910,12 +1922,13 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
    Remplace l'ancien tiroir latéral : le dossier s'ouvre dans un
    onglet de la barre du haut, comme "AC INVEST" chez MyUnisoft.
    ============================================================ */
-function ClientEditorPage({ client, team, onUpdate, onClose }) {
+function ClientEditorPage({ client, team, me, onUpdate, onClose }) {
   const [tab, setTab] = useState("infos");
   if (!client) return null;
   const tabs = [
     { id: "infos", label: "Infos générales" }, { id: "corporate", label: "Corporate" }, { id: "tva", label: "TVA" },
     { id: "bilan", label: "Bilan" }, { id: "acomptes", label: "Acomptes" }, { id: "age", label: "AGE / AGO" }, { id: "mission", label: "Accueil" },
+    { id: "honoraires", label: "Honoraires" }, { id: "social", label: "Social" }, { id: "notes", label: "Notes" },
   ];
   return (
     <div>
@@ -1966,6 +1979,7 @@ function ClientEditorPage({ client, team, onUpdate, onClose }) {
         {tab === "acomptes" && <AcomptesTab client={client} onUpdate={onUpdate} />}
         {tab === "age" && <AgeAgoEditor client={client} onUpdate={onUpdate} />}
         {tab === "mission" && <MissionTab client={client} onUpdate={onUpdate} />}
+        {tab === "notes" && <NotesTab client={client} me={me} onUpdate={onUpdate} />}
       </div>
     </div>
   );
@@ -2145,6 +2159,59 @@ function MissionTab({ client, onUpdate }) {
           <span style={{ fontSize: 12.5, color: m[k] ? T.inkMuted : T.ink, textDecoration: m[k] ? "line-through" : "none" }}>{k}</span>
         </div>
       ))}
+    </div>
+  );
+}
+/* ============================================================
+   NOTES COLLABORATIVES — journal par dossier, visible et
+   alimenté par tous les collaborateurs. Append-only : on ajoute,
+   on ne modifie/supprime pas l'historique.
+   ============================================================ */
+function NotesTab({ client, me, onUpdate }) {
+  const [texte, setTexte] = useState("");
+  const notes = client.notesCollab || [];
+  const sorted = [...notes].sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const addNote = () => {
+    if (!texte.trim()) return;
+    const entry = { id: `n-${Date.now()}`, texte: texte.trim(), auteur: me, date: new Date().toISOString() };
+    onUpdate(client.id, { notesCollab: [...notes, entry] });
+    setTexte("");
+  };
+
+  return (
+    <div>
+      <div style={{ marginBottom: 16 }}>
+        <textarea value={texte} onChange={(e) => setTexte(e.target.value)} rows={3}
+          placeholder="Un besoin, une info à transmettre à l'équipe sur ce dossier…"
+          style={{ width: "100%", padding: 10, borderRadius: 10, border: `1px solid ${T.line}`, fontSize: 12.5, background: T.card, resize: "vertical" }} />
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+          <button onClick={addNote} disabled={!texte.trim()} style={{
+            display: "flex", alignItems: "center", gap: 6, background: T.navy, color: "#fff", border: "none", borderRadius: 10,
+            padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: texte.trim() ? 1 : 0.6,
+          }}>
+            <Plus size={14} /> Ajouter la note
+          </button>
+        </div>
+      </div>
+
+      {sorted.length === 0 ? <EmptyNote text="Aucune note pour ce dossier pour l'instant." /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {sorted.map((n) => (
+            <div key={n.id} style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: "10px 12px", background: T.paper }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                <span style={{ fontWeight: 700, fontSize: 12 }}>{n.auteur}</span>
+                <span style={{ fontFamily: T.mono, fontSize: 10.5, color: T.inkMuted }}>
+                  {new Date(n.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                  {" · "}
+                  {new Date(n.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </div>
+              <div style={{ fontSize: 12.5, color: T.inkSoft, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{n.texte}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2474,7 +2541,201 @@ function RegimeChangeView({ clients, me, search, onUpdate }) {
     </div>
   );
 }
+/* ============================================================
+   HONORAIRES — montant courant + historique des changements,
+   avec rappel "lettre de mission signée" et lien SharePoint.
+   ============================================================ */
+function HonorairesView({ clients, search, roleFilter, setRoleFilter, me, onUpdate }) {
+  const sorted = useMemo(() => [...clients].sort((a, b) => a.nom.localeCompare(b.nom)), [clients]);
+  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
+  const [clientId, setClientId] = useState(sorted[0]?.id || "");
+  const [nouveauMontant, setNouveauMontant] = useState("");
+  const [dateChangement, setDateChangement] = useState(todayISO());
+  const [motif, setMotif] = useState("Revalorisation annuelle");
+  const [motifAutre, setMotifAutre] = useState("");
+  const [lettreSignee, setLettreSignee] = useState(false);
+  const [sharepointUrl, setSharepointUrl] = useState("");
 
+  const client = clients.find((c) => c.id === clientId);
+
+  const submit = () => {
+    if (!client || !nouveauMontant.trim()) return;
+    const finalMotif = motif === "Autre" ? (motifAutre.trim() || "Autre") : motif;
+    const entry = {
+      date: dateChangement || todayISO(), ancien: client.honoraires?.montant || "—", nouveau: nouveauMontant.trim(),
+      motif: finalMotif, lettreSignee, sharepointUrl: lettreSignee ? sharepointUrl.trim() : "", par: me,
+    };
+    onUpdate(client.id, { honoraires: { montant: nouveauMontant.trim(), historique: [...(client.honoraires?.historique || []), entry] } });
+    setNouveauMontant(""); setMotifAutre(""); setLettreSignee(false); setSharepointUrl("");
+  };
+
+  const allHistory = useMemo(() => {
+    const rows = [];
+    clients.forEach((c) => (c.honoraires?.historique || []).forEach((h) => rows.push({ ...h, client: c.nom })));
+    return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [clients]);
+
+  return (
+    <div>
+      <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Honoraires</h1></Reveal>
+      <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18 }}>Montant courant par dossier et historique des changements. Un changement d'honoraires implique de vérifier la lettre de mission.</p>
+      <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} />
+
+      <Panel title="Enregistrer un changement">
+        <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 10, marginBottom: 10 }}>
+          <select value={clientId} onChange={(e) => setClientId(e.target.value)} style={inputStyle}>
+            {sorted.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+          </select>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: T.inkMuted, padding: "0 4px" }}>
+            Montant actuel : <strong style={{ color: T.ink }}>{client?.honoraires?.montant || "—"}</strong>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <input placeholder="Nouveau montant (ex. 2 400 € HT/an)" value={nouveauMontant} onChange={(e) => setNouveauMontant(e.target.value)} style={inputStyle} />
+          <input type="date" value={dateChangement} onChange={(e) => setDateChangement(e.target.value)} style={inputStyle} />
+          <select value={motif} onChange={(e) => setMotif(e.target.value)} style={inputStyle}>
+            <option>Revalorisation annuelle</option><option>Extension de mission</option>
+            <option>Renégociation à la baisse</option><option>Nouveau dossier</option><option>Autre</option>
+          </select>
+        </div>
+        {motif === "Autre" && <input placeholder="Précisez le motif" value={motifAutre} onChange={(e) => setMotifAutre(e.target.value)} style={{ ...inputStyle, width: "100%", marginBottom: 10 }} />}
+
+        <div style={{ background: T.paper, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+          <FieldRow label={<span style={{ display: "flex", alignItems: "center", gap: 6 }}><Stamp size={14} /> Lettre de mission signée reçue ?</span>}>
+            <ToggleBtn on={lettreSignee} onClick={() => setLettreSignee(!lettreSignee)} />
+          </FieldRow>
+          {lettreSignee && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: T.inkMuted, marginBottom: 4 }}>Lien du document déposé sur SharePoint</div>
+              <input placeholder="https://…sharepoint.com/…" value={sharepointUrl} onChange={(e) => setSharepointUrl(e.target.value)} style={{ ...inputStyle, width: "100%" }} />
+            </div>
+          )}
+        </div>
+
+        <button onClick={submit} disabled={!client || !nouveauMontant.trim()} style={{
+          display: "flex", alignItems: "center", gap: 6, background: T.navy, color: "#fff", border: "none", borderRadius: 10,
+          padding: "10px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: (!client || !nouveauMontant.trim()) ? 0.6 : 1,
+        }}>
+          <RefreshCw size={14} /> Enregistrer le changement
+        </button>
+      </Panel>
+
+      <div style={{ height: 16 }} />
+      <Panel title={`Historique des changements (${allHistory.length})`} right={<History size={16} color={T.inkMuted} />}>
+        {allHistory.length === 0 ? <EmptyNote text="Aucun changement d'honoraires enregistré pour l'instant." /> : (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.9fr 0.9fr 1.2fr 1fr 0.8fr 0.8fr", padding: "6px 4px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", color: T.inkMuted, fontWeight: 600, borderBottom: `1px solid ${T.line}` }}>
+              <div>Dossier</div><div>Ancien</div><div>Nouveau</div><div>Motif</div><div>Date</div><div>Lettre</div><div>Par</div>
+            </div>
+            {allHistory.map((h, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.4fr 0.9fr 0.9fr 1.2fr 1fr 0.8fr 0.8fr", padding: "9px 4px", fontSize: 12, borderBottom: `1px solid ${T.line}`, alignItems: "center" }}>
+                <div style={{ fontWeight: 600 }}>{h.client}</div>
+                <div style={{ color: T.inkMuted, fontSize: 11.5 }}>{h.ancien}</div>
+                <div style={{ color: T.green, fontWeight: 600, fontSize: 11.5 }}>{h.nouveau}</div>
+                <div style={{ color: T.inkSoft, fontSize: 11.5 }}>{h.motif}</div>
+                <div style={{ fontFamily: T.mono, fontSize: 11, color: T.inkMuted }}>{fmtFR(h.date)}</div>
+                <div>
+                  {h.lettreSignee
+                    ? (h.sharepointUrl ? <a href={h.sharepointUrl} target="_blank" rel="noreferrer"><Stamped tone="green" small>Signée ↗</Stamped></a> : <Stamped tone="green" small>Signée</Stamped>)
+                    : <Stamped tone="amber" small>À signer</Stamped>}
+                </div>
+                <div style={{ fontSize: 11.5 }}>{h.par}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+/* ============================================================
+   CADRE SOCIAL — le cabinet ne fait pas la paie, mais suit la
+   réception et la comptabilisation des OD de salaire mois par mois.
+   ============================================================ */
+function odCycle(val) {
+  const v = (val || "").toUpperCase();
+  return v === "" ? "RECU" : v === "RECU" ? "COMPTA" : v === "COMPTA" ? "NA" : "";
+}
+function odTone(val) {
+  const v = (val || "").toUpperCase();
+  return v === "COMPTA" ? "green" : v === "RECU" ? "amber" : v === "NA" ? "neutral" : "neutral";
+}
+function odLabel(val) {
+  const v = (val || "").toUpperCase();
+  return v === "COMPTA" ? "Compta" : v === "RECU" ? "Reçu" : v === "NA" ? "N/A" : "·";
+}
+function CadreSocialView({ clients, search, roleFilter, setRoleFilter, me, onUpdate }) {
+  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
+  const concernes = filtered.filter((c) => c.social?.concerne);
+  const autres = filtered.filter((c) => !c.social?.concerne);
+
+  const patchSocial = (c, patch) => onUpdate(c.id, { social: { ...(c.social || {}), ...patch } });
+  const cycleMonth = (c, mois) => {
+    const odMois = c.social?.odMois || {};
+    patchSocial(c, { odMois: { ...odMois, [mois]: odCycle(odMois[mois]) } });
+  };
+
+  return (
+    <div>
+      <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Cadre social</h1></Reveal>
+      <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18, lineHeight: 1.6 }}>
+        Le cabinet n'établit pas les bulletins de paie. Ce suivi concerne uniquement la réception et la comptabilisation des OD de salaire transmises par le cabinet de paie externe.
+        {" "}Cliquez une cellule : vide → <Stamped tone="amber" small>Reçu</Stamped> → <Stamped tone="green" small>Compta</Stamped> → <Stamped tone="neutral" small>N/A</Stamped>.
+      </p>
+      <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} />
+
+      <Panel title={`Dossiers concernés (${concernes.length})`}>
+        {concernes.length === 0 ? <EmptyNote text="Aucun dossier marqué « concerné » pour l'instant." /> : (
+          <div className="scrollbar" style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11.5 }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Dossier</th><th style={thStyle}>Effectif</th><th style={thStyle}>Cabinet de paie</th>
+                  {MOIS_ORDER.map((m) => <th key={m} style={{ ...thStyle, textAlign: "center" }}>{m}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {concernes.map((c) => (
+                  <tr key={c.id} className="hoverRow">
+                    <td style={{ ...tdStyle, fontWeight: 600, whiteSpace: "nowrap" }}>{c.nom}</td>
+                    <td style={tdStyle}>
+                      <input defaultValue={c.social?.effectif || ""} placeholder="—" onBlur={(e) => patchSocial(c, { effectif: e.target.value })}
+                        style={{ width: 44, textAlign: "center", fontFamily: T.mono, fontSize: 11.5, padding: "3px 2px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }} />
+                    </td>
+                    <td style={tdStyle}>
+                      <input defaultValue={c.social?.cabinetPaie || ""} placeholder="ex. Silae, ADP…" onBlur={(e) => patchSocial(c, { cabinetPaie: e.target.value })}
+                        style={{ width: 120, fontSize: 11.5, padding: "3px 6px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }} />
+                    </td>
+                    {MOIS_ORDER.map((m) => (
+                      <td key={m} style={{ ...tdStyle, textAlign: "center" }}>
+                        <button className="clickable" onClick={() => cycleMonth(c, m)} style={{ background: "none", border: "none", padding: 0 }}>
+                          <Stamped tone={odTone(c.social?.odMois?.[m])} small>{odLabel(c.social?.odMois?.[m])}</Stamped>
+                        </button>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+
+      <div style={{ height: 16 }} />
+      <Panel title={`Autres dossiers (${autres.length})`}>
+        {autres.length === 0 ? <EmptyNote text="Tous les dossiers de cette sélection sont marqués concernés." /> : autres.map((c) => (
+          <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 4px", borderBottom: `1px solid ${T.line}` }}>
+            <span style={{ flex: 1, fontWeight: 600, fontSize: 12.5 }}>{c.nom}</span>
+            <button onClick={() => patchSocial(c, { concerne: true })} style={{ fontSize: 11.5, fontWeight: 600, color: T.navy, background: T.navySoft, border: "none", borderRadius: 999, padding: "4px 12px", cursor: "pointer" }}>
+              Marquer concerné
+            </button>
+          </div>
+        ))}
+      </Panel>
+    </div>
+  );
+}
 /* ============================================================
    SUIVI FISCAL — calendrier / agenda
    ============================================================ */
