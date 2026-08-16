@@ -1936,7 +1936,6 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
               </div>
             )}
           </div>
-          </div>
           {toolIcons.map((ic) => {
             const Icon = ic.icon;
             return (
