@@ -365,7 +365,8 @@ function addMonthsISO(iso, months) {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(y, m - 1 + months, d);
   return dt.toISOString().slice(0, 10);
-  function fmtEUR(v) {
+}
+function fmtEUR(v) {
   const n = Number(v);
   if (v === "" || v == null || Number.isNaN(n)) return "—";
   return n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
@@ -389,7 +390,6 @@ const BILAN_REVISION_STEPS = [
   { id: "en_cours", label: "En cours" },
   { id: "terminee", label: "Terminée" },
 ];
-}
 function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
