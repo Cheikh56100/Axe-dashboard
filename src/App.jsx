@@ -6,7 +6,7 @@ import {
   Filter, ArrowUpRight, CircleDot, Loader2, RefreshCw, History,
   ChevronUp, CalendarDays, CalendarRange, Settings2, Trash2,
   Pencil, ChevronLeft, ShieldCheck, Home, LogOut, Mail, Lock, UserRound,
-  Phone, Briefcase, UserCheck, Wallet, ShieldAlert
+  Phone, Briefcase, UserCheck, Wallet, ShieldAlert, Menu, Bell
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { motion } from "framer-motion";
@@ -71,41 +71,6 @@ function startOfWeek(d) {
   x.setDate(x.getDate() - day);
   x.setHours(0, 0, 0, 0);
   return x;
-}
-
-/* ---- Acomptes IS / CFE / TVA — calcul automatique à partir du N-1 ---- */
-function fmtEUR(n) {
-  const v = parseFloat(n);
-  if (!v && v !== 0) return "—";
-  return v.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
-}
-function isIsConcerne(client) {
-  const n = parseFloat(client.is?.nMoins1);
-  return !!n && n > 3000;
-}
-function isCfeConcerne(client) {
-  const n = parseFloat(client.cfe?.nMoins1);
-  return !!n && n > 3000;
-}
-function isTvaAcompteConcerne(client) {
-  if (client.tvaRegime !== "CA12") return false;
-  const n = parseFloat(client.tvaAcompte?.nMoins1);
-  return !!n && n > 1000;
-}
-// IS : 4 acomptes de 25% de l'IS N-1
-function computeIsAcompte(nMoins1) {
-  return Math.round((parseFloat(nMoins1) || 0) * 0.25);
-}
-// CFE : acompte de 50% de la CFE N-1 en juin, solde en décembre
-function computeCfeAcompte(nMoins1) {
-  return Math.round((parseFloat(nMoins1) || 0) * 0.5);
-}
-// TVA (CA12) : 55% en juillet, 40% en décembre de la TVA N-1, régularisation sur la CA12 annuelle
-function computeTvaAcompteJuillet(nMoins1) {
-  return Math.round((parseFloat(nMoins1) || 0) * 0.55);
-}
-function computeTvaAcompteDecembre(nMoins1) {
-  return Math.round((parseFloat(nMoins1) || 0) * 0.40);
 }
 
 /* ============================================================
@@ -297,41 +262,24 @@ function computeFiscalEvents(clients) {
         });
       }
     }
-    // IS — acomptes (dates statutaires approximatives : 15 mars/juin/sept/déc), calculés sur l'IS N-1
-    if (isIsConcerne(c)) {
-      const montant = computeIsAcompte(c.is.nMoins1);
+    // IS — acomptes (dates statutaires approximatives : 15 mars/juin/sept/déc)
+    if (c.is?.concerne) {
       [["mars", 2, "mars"], ["juin", 5, "juin"], ["sept", 8, "septembre"], ["dec", 11, "décembre"]].forEach(([key, m, label]) => {
         if (!c.is[key]) {
           events.push({
             id: `${c.id}-is-${key}`, client: c, category: "IS",
-            label: `Acompte IS — ${label} (${fmtEUR(montant)})`, date: new Date(year, m, 15), done: false, tone: "amber",
+            label: `Acompte IS — ${label}`, date: new Date(year, m, 15), done: false, tone: "amber",
           });
         }
       });
     }
-    // CFE — 15 juin / 15 déc, calculés sur la CFE N-1
-    if (isCfeConcerne(c)) {
-      const montant = computeCfeAcompte(c.cfe.nMoins1);
+    // CFE — 15 juin / 15 déc
+    if (c.cfe?.concerne) {
       [["juin", 5, "juin (acompte)"], ["dec", 11, "décembre (solde)"]].forEach(([key, m, label]) => {
         if (!c.cfe[key]) {
           events.push({
             id: `${c.id}-cfe-${key}`, client: c, category: "CFE",
-            label: `CFE — ${label} (${fmtEUR(montant)})`, date: new Date(year, m, 15), done: false, tone: "amber",
-          });
-        }
-      });
-    }
-    // TVA — acomptes (régime CA12 uniquement), calculés sur la TVA N-1 : 55% en juillet, 40% en décembre
-    if (isTvaAcompteConcerne(c)) {
-      const ta = c.tvaAcompte || {};
-      [
-        ["juillet", 6, "juillet", computeTvaAcompteJuillet(ta.nMoins1)],
-        ["decembre", 11, "décembre", computeTvaAcompteDecembre(ta.nMoins1)],
-      ].forEach(([key, m, label, montant]) => {
-        if (!ta[key]) {
-          events.push({
-            id: `${c.id}-tvaacompte-${key}`, client: c, category: "TVA",
-            label: `Acompte TVA — ${label} (${fmtEUR(montant)})`, date: new Date(year, m, 15), done: false, tone: "amber",
+            label: `CFE — ${label}`, date: new Date(year, m, 15), done: false, tone: "amber",
           });
         }
       });
@@ -353,7 +301,7 @@ function computeFiscalEvents(clients) {
         });
       }
     }
-   // AGE/AGO — approbation ~6 mois après clôture si non tenue
+    // AGE/AGO — approbation ~6 mois après clôture si non tenue
     if (c.dateCloture) {
       const latestYear = Object.keys(c.ageAgoHistory || {}).sort((a, b) => b - a)[0];
       const y = latestYear ? c.ageAgoHistory[latestYear] : null;
@@ -367,7 +315,6 @@ function computeFiscalEvents(clients) {
       }
     }
   });
-
   return events;
 }
 
@@ -470,6 +417,7 @@ function CabinetApp({ session, onLogout }) {
   const [openClientTabs, setOpenClientTabs] = useState([]); // [{id, label}]
   const [activeClientTab, setActiveClientTab] = useState(null); // id du dossier affiché en page pleine, ou null
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [tasksDb, setTasksDb] = useState([]); // tâches réelles (table "tasks"), indépendantes des échéances fiscales
 
   // Empêche le canal temps réel de "rejouer" nos propres écritures juste après qu'on les a envoyées
@@ -584,8 +532,7 @@ function CabinetApp({ session, onLogout }) {
   }, []);
 
   // Tâches (table "tasks", indépendante des échéances fiscales calculées) : chargement
-  // initial + rafraîchissement à chaque changement temps réel (simple et robuste ;
-  // le volume de tâches d'un cabinet reste faible, un refetch complet est peu coûteux).
+  // initial + rafraîchissement à chaque changement temps réel.
   useEffect(() => {
     let cancelled = false;
     const reload = () => fetchTasks().then((rows) => { if (!cancelled) setTasksDb(rows); });
@@ -859,14 +806,16 @@ function CabinetApp({ session, onLogout }) {
       <GlobalStyle />
       <Sidebar view={view} setView={(v) => navTo(v)} me={me} meRole={myRole} mePortefeuille={myPortefeuille} team={team}
         onLogout={onLogout} counts={{ ...computeCounts(myClients), tachesActives: visibleTasksDb.filter((t) => t.statut !== "termine").length }}
-        collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
+        collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed}
+        mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen} />
       <div style={S.main}>
         <TopBar search={search} setSearch={setSearch} saveStatus={saveStatus} me={me} meColor={meColor}
           openTabs={openClientTabs} activeTab={activeClientTab} onHome={goHome}
           onSelectTab={(id) => setActiveClientTab(id)} onCloseTab={closeClientTab}
           onNav={navTo} onOpenClient={openClientTab} onNewClient={() => setShowAddClient(true)} clients={myClients}
-          notifCount={myTasks.filter((t) => t.bucket === "retard").length || undefined} />
-        <div style={S.content}>
+          notifCount={myTasks.filter((t) => t.bucket === "retard").length || undefined}
+          onOpenMobileMenu={() => setMobileMenuOpen(true)} />
+        <div className="px-3 py-3 md:px-7 md:py-6" style={{ ...S.content, padding: undefined }}>
           {activeClient ? (
             // key={activeClient.id} force le remontage complet du composant à chaque
             // changement d'onglet : les champs non-contrôlés (defaultValue) et l'état
@@ -1234,7 +1183,7 @@ function PendingScreen({ row, onLogout }) {
 /* ============================================================
    SIDEBAR
    ============================================================ */
-function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, counts, collapsed, setCollapsed }) {
+function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, counts, collapsed, setCollapsed, mobileOpen, setMobileOpen }) {
   const GROUPS = [
     {
       id: "clients-accueil", label: "Gestion clients & accueil",
@@ -1275,114 +1224,146 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
-  // Si on navigue (ex. depuis le Dashboard) vers un item dont le groupe est fermé, on le déplie automatiquement
   useEffect(() => {
     const g = groupOf(view);
     if (g) setOpenGroups((prev) => (prev.has(g) ? prev : new Set(prev).add(g)));
   }, [view]);
 
   const meColor = team.find((t) => t.nom === me)?.color || T.navy;
-  const W = collapsed ? 76 : 258;
 
-  const NavButton = ({ it, indent }) => {
-    const active = view === it.id; const Icon = it.icon;
+  const badgeToneCls = (tone) => tone === "red" ? "bg-badge-red-bg text-badge-red-text" : tone === "amber" ? "bg-badge-amber-bg text-badge-amber-text" : "bg-accent-soft text-accent-deep";
+
+  // isMobile=true force toujours l'affichage déplié (le mode "réduit" n'a de sens que sur desktop)
+  const SidebarInner = ({ isMobile }) => {
+    const isCollapsed = isMobile ? false : collapsed;
+    const NavButton = ({ it, indent }) => {
+      const active = view === it.id; const Icon = it.icon;
+      return (
+        <button onClick={() => { setView(it.id); if (isMobile) setMobileOpen?.(false); }} title={it.label}
+          className={`nav-item relative w-full ${isCollapsed ? "justify-center px-0" : `justify-start ${indent ? "pl-6" : ""}`} ${active ? "nav-item-active" : ""}`}>
+          {active && !isCollapsed && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-accent-deep" />}
+          <Icon size={15} strokeWidth={2} className="shrink-0" />
+          {!isCollapsed && <span className="flex-1 whitespace-nowrap overflow-hidden text-ellipsis text-left">{it.label}</span>}
+          {!isCollapsed && !!it.badge && (
+            <span className={`font-sans text-[10px] font-bold px-1.5 py-0.5 rounded-full ${badgeToneCls(it.badgeTone)}`}>{it.badge}</span>
+          )}
+        </button>
+      );
+    };
     return (
-      <button onClick={() => setView(it.id)} title={it.label} className="sideNavItem" style={{
-        display: "flex", alignItems: "center", gap: 10, padding: collapsed ? "10px 0" : `9px 11px 9px ${indent ? 22 : 11}px`, borderRadius: 9, border: "none",
-        background: active ? T.sidebarActive : "transparent", color: active ? "#fff" : T.sidebarInkMuted,
-        cursor: "pointer", fontSize: 12.5, fontWeight: active ? 700 : 500, textAlign: "left", width: "100%",
-        justifyContent: collapsed ? "center" : "flex-start", position: "relative",
-      }}>
-        {active && !collapsed && <span style={{ position: "absolute", left: 0, top: 6, bottom: 6, width: 3, borderRadius: 3, background: T.sidebarAccent }} />}
-        <Icon size={15} strokeWidth={2} style={{ flexShrink: 0 }} />
-        {!collapsed && <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.label}</span>}
-        {!collapsed && !!it.badge && (
-          <span style={{
-            fontFamily: T.sans, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
-            background: it.badgeTone === "red" ? "rgba(248,113,113,0.18)" : it.badgeTone === "amber" ? "rgba(251,191,36,0.18)" : "rgba(129,140,248,0.2)",
-            color: it.badgeTone === "red" ? "#FCA5A5" : it.badgeTone === "amber" ? "#FCD34D" : T.sidebarAccent,
-          }}>{it.badge}</span>
-        )}
-      </button>
+      <div className={`h-full flex-shrink-0 bg-white text-inksoft flex flex-col py-5 px-3 border-r border-line transition-[width] duration-200 ${isCollapsed ? "w-[76px]" : "w-[258px]"}`}>
+        <div className={`flex items-center gap-2.5 pb-4 mb-3 border-b border-line ${isCollapsed ? "justify-center px-0" : "px-1.5"}`}>
+          <div className="w-8 h-8 rounded-[10px] bg-accent flex items-center justify-center shrink-0 font-extrabold text-white text-sm">A</div>
+          {!isCollapsed && (
+            <div>
+              <div className="text-[13px] font-extrabold tracking-tight text-ink">AXE-EXPERTS</div>
+              <div className="font-mono text-[9.5px] text-inkmuted">Registre &amp; Pilotage</div>
+            </div>
+          )}
+          {!isMobile && (
+            <button onClick={() => setCollapsed(!collapsed)} title="Réduire / agrandir"
+              className={`ml-auto bg-transparent border-none text-inkmuted cursor-pointer hover:text-ink ${isCollapsed ? "hidden" : "flex"}`}>
+              <ChevronLeft size={14} />
+            </button>
+          )}
+          {isMobile && (
+            <button onClick={() => setMobileOpen?.(false)} className="ml-auto text-inkmuted hover:text-ink">
+              <X size={18} />
+            </button>
+          )}
+        </div>
+        <nav className="flex flex-col gap-1 overflow-y-auto">
+          <NavButton it={{ id: "dashboard", label: "Vue d'ensemble", icon: LayoutGrid }} />
+          <div className="h-1.5" />
+          {GROUPS.map((g) => {
+            const isOpen = isCollapsed || openGroups.has(g.id);
+            return (
+              <div key={g.id}>
+                {!isCollapsed && (
+                  <button onClick={() => toggleGroup(g.id)}
+                    className="flex items-center gap-1.5 w-full bg-transparent border-none px-3 pt-2.5 pb-1.5 text-[10px] font-bold tracking-wider uppercase text-inkmuted hover:text-ink transition-colors cursor-pointer">
+                    <span className="flex-1 text-left">{g.label}</span>
+                    <ChevronDown size={12} className={`transition-transform duration-150 ${isOpen ? "" : "-rotate-90"}`} />
+                  </button>
+                )}
+                {isOpen && (
+                  <div className="flex flex-col gap-0.5">
+                    {g.items.map((it) => <NavButton key={it.id} it={it} indent={!isCollapsed} />)}
+                  </div>
+                )}
+                {isCollapsed && <div className="h-1.5" />}
+              </div>
+            );
+          })}
+        </nav>
+        <div className="mt-auto pt-3.5 border-t border-line flex flex-col gap-1.5">
+          <div title={mePortefeuille ? `Portefeuille : ${mePortefeuille.nom}` : "Aucun portefeuille"}
+            className={`flex items-center gap-2 w-full bg-app border border-line rounded-[11px] text-ink ${isCollapsed ? "justify-center p-1.5" : "justify-start px-2 py-2"}`}>
+            <span className="w-6 h-6 rounded-full flex items-center justify-center font-bold text-[11px] text-white shrink-0" style={{ background: meColor }}>{me?.[0]}</span>
+            {!isCollapsed && (
+              <div className="text-left overflow-hidden">
+                <div className="text-[11.5px] font-bold whitespace-nowrap overflow-hidden text-ellipsis">{me}</div>
+                <div className="text-[10px] text-inkmuted whitespace-nowrap overflow-hidden text-ellipsis">
+                  {ROLE_LABELS[meRole] || meRole}{mePortefeuille ? ` · ${mePortefeuille.nom}` : ""}
+                </div>
+              </div>
+            )}
+          </div>
+          {onLogout && (
+            <button onClick={onLogout} title="Déconnexion"
+              className={`flex items-center gap-2 w-full bg-transparent border-none cursor-pointer rounded-[10px] text-red-500 text-[11.5px] font-semibold hover:bg-red-50 transition-colors ${isCollapsed ? "justify-center p-1.5" : "justify-start px-2 py-1.5"}`}>
+              <LogOut size={14} />
+              {!isCollapsed && <span>Déconnexion</span>}
+            </button>
+          )}
+        </div>
+      </div>
     );
   };
 
   return (
-    <div style={{ width: W, flexShrink: 0, background: T.sidebarBg, color: T.sidebarInk, display: "flex", flexDirection: "column", padding: "22px 12px", borderRight: `1px solid ${T.sidebarBorder}`, transition: "width .18s ease" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 6px 20px", marginBottom: 12, borderBottom: `1px solid ${T.sidebarBorder}`, justifyContent: collapsed ? "center" : "flex-start" }}>
-        <div style={{ width: 34, height: 34, borderRadius: 10, background: T.sidebarAccent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: T.serif, fontWeight: 800, color: "#0F172A", fontSize: 14 }}>A</div>
-        {!collapsed && (
-          <div>
-            <div style={{ fontFamily: T.serif, fontSize: 13, fontWeight: 800, letterSpacing: "0.01em", color: "#fff" }}>AXE-EXPERTS</div>
-            <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.sidebarInkMuted }}>Registre &amp; Pilotage</div>
-          </div>
-        )}
-        <button onClick={() => setCollapsed(!collapsed)} title="Réduire / agrandir" style={{ marginLeft: "auto", background: "none", border: "none", color: T.sidebarInkMuted, cursor: "pointer", display: collapsed ? "none" : "flex" }}>
-          <ChevronLeft size={14} />
-        </button>
-      </div>
-      <nav className="scrollbar" style={{ display: "flex", flexDirection: "column", gap: 4, overflowY: "auto" }}>
-        <NavButton it={{ id: "dashboard", label: "Vue d'ensemble", icon: LayoutGrid }} />
-        <div style={{ height: 6 }} />
-        {GROUPS.map((g) => {
-          const isOpen = collapsed || openGroups.has(g.id);
-          return (
-            <div key={g.id}>
-              {!collapsed && (
-                <button onClick={() => toggleGroup(g.id)} className="sideGroupHeader" style={{
-                  display: "flex", alignItems: "center", gap: 6, width: "100%", background: "none", border: "none",
-                  padding: "10px 11px 6px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
-                  color: T.sidebarInkMuted,
-                }}>
-                  <span style={{ flex: 1, textAlign: "left" }}>{g.label}</span>
-                  <ChevronDown size={12} style={{ transform: isOpen ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform .15s ease" }} />
-                </button>
-              )}
-              {isOpen && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  {g.items.map((it) => <NavButton key={it.id} it={it} indent={!collapsed} />)}
-                </div>
-              )}
-              {collapsed && <div style={{ height: 6 }} />}
-            </div>
-          );
-        })}
-      </nav>
-      <div style={{ marginTop: "auto", paddingTop: 14, borderTop: `1px solid ${T.sidebarBorder}`, display: "flex", flexDirection: "column", gap: 6 }}>
-        <div title={mePortefeuille ? `Portefeuille : ${mePortefeuille.nom}` : "Aucun portefeuille"} style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", background: T.sidebarBg2, border: `1px solid ${T.sidebarBorder}`, padding: collapsed ? "7px" : "8px 9px", borderRadius: 11, color: "#fff", justifyContent: collapsed ? "center" : "flex-start" }}>
-          <span style={{ width: 24, height: 24, borderRadius: "50%", background: meColor, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.serif, fontWeight: 700, fontSize: 11, color: "#fff", flexShrink: 0 }}>{me?.[0]}</span>
-          {!collapsed && (
-            <div style={{ textAlign: "left", overflow: "hidden" }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{me}</div>
-              <div style={{ fontSize: 10, color: T.sidebarInkMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {ROLE_LABELS[meRole] || meRole}{mePortefeuille ? ` · ${mePortefeuille.nom}` : ""}
-              </div>
-            </div>
-          )}
+    <>
+      {/* Desktop : sidebar fixe */}
+      <div className="hidden md:block"><SidebarInner isMobile={false} /></div>
+      {/* Mobile : tiroir (drawer) avec overlay */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen?.(false)} />
+          <div className="relative z-10 h-full shadow-2xl"><SidebarInner isMobile={true} /></div>
         </div>
-        {onLogout && (
-          <button onClick={onLogout} title="Déconnexion" style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", background: "none", border: "none", cursor: "pointer", padding: collapsed ? "7px" : "7px 9px", borderRadius: 10, color: "#F87171", fontSize: 11.5, fontWeight: 600, justifyContent: collapsed ? "center" : "flex-start" }}>
-            <LogOut size={14} />
-            {!collapsed && <span>Déconnexion</span>}
-          </button>
-        )}
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
 /* ============================================================
    TOP BAR
    ============================================================ */
-function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTab, onHome, onSelectTab, onCloseTab, onNav, onOpenClient, onNewClient, clients, notifCount }) {
+function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTab, onHome, onSelectTab, onCloseTab, onNav, onOpenClient, onNewClient, clients, notifCount, onOpenMobileMenu }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
+  const [notifOpen, setNotifOpen] = useState(false);
   const pickerRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  // Raccourci clavier Cmd+K / Ctrl+K : ouvre la recherche rapide depuis n'importe où
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 0);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // Recherche rapide : Entrée dans le champ de recherche ouvre directement le
   // dossier trouvé (par nom ou SIREN) s'il n'y en a qu'un seul de correspondant.
   const handleSearchKeyDown = (e) => {
+    if (e.key === "Escape") { setSearch(""); setSearchOpen(false); e.currentTarget.blur(); return; }
     if (e.key !== "Enter") return;
     const q = search.trim().toLowerCase();
     if (!q) return;
@@ -1422,6 +1403,9 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
   return (
     <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, background: T.card, borderBottom: `1px solid ${T.line}` }}>
       <div style={{ display: "flex", alignItems: "center", padding: "0 10px", height: 46, gap: 2 }}>
+        <button onClick={onOpenMobileMenu} title="Menu" className="md:hidden flex items-center justify-center w-8 h-8 rounded-lg text-inksoft hover:bg-app mr-1 shrink-0">
+          <Menu size={18} strokeWidth={2} />
+        </button>
         <button className="topTab" onClick={onHome} title="Accueil" style={{
           background: !activeTab ? T.paperDeep : "transparent", color: !activeTab ? T.navy : T.inkMuted, border: "none", marginRight: 2,
         }}>
@@ -1466,24 +1450,51 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
         </div>
 
         {searchOpen && (
-          <div style={{ position: "relative", marginLeft: 10, flex: "0 1 260px" }}>
-            <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.inkMuted }} />
-            <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={handleSearchKeyDown}
-              placeholder="Rechercher un dossier, un SIREN… (Entrée pour ouvrir)"
-              style={{ width: "100%", padding: "7px 10px 7px 28px", borderRadius: 999, border: `1px solid ${T.line}`, background: T.paper, fontSize: 12, color: T.ink }} />
+          <div className="relative ml-2.5 flex-[0_1_280px] hidden sm:block">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-inkmuted" />
+            <input ref={searchInputRef} autoFocus value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={handleSearchKeyDown}
+              onBlur={() => !search && setSearchOpen(false)}
+              placeholder="Rechercher un dossier, un SIREN…"
+              className="input-field !rounded-full !py-1.5 !pl-8 !pr-16 !bg-app text-xs w-full" />
+            <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[9.5px] font-mono text-inkmuted bg-white border border-line rounded px-1.5 py-0.5">Échap</kbd>
           </div>
         )}
 
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 1 }}>
+        <div className="ml-auto flex items-center gap-0.5">
           <div style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: T.mono, fontSize: 10.5, color: T.inkMuted, marginRight: 8 }}>
             {saveStatus === "saving" && <><Loader2 size={12} className="spin" /> enreg.…</>}
             {saveStatus === "saved" && <><Check size={12} color={T.green} /> enregistré</>}
           </div>
-          <button className="topIconBtn" title="Rechercher" onClick={() => setSearchOpen((s) => !s)}><Search size={16} strokeWidth={1.9} /></button>
+          {!searchOpen && (
+            <button onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 0); }} title="Rechercher (⌘K)"
+              className="hidden sm:flex items-center gap-2 rounded-full border border-line bg-app px-3 py-1.5 text-xs text-inkmuted hover:border-accent hover:text-accent transition-colors mr-1">
+              <Search size={13} />
+              <span className="hidden lg:inline">Rechercher…</span>
+              <kbd className="font-mono text-[9.5px] bg-white border border-line rounded px-1.5 py-0.5 ml-1">⌘K</kbd>
+            </button>
+          )}
+          <button className="sm:hidden topIconBtn" title="Rechercher" onClick={() => setSearchOpen((s) => !s)}><Search size={16} strokeWidth={1.9} /></button>
+          <div className="relative hidden md:block">
+            <button onClick={() => setNotifOpen((s) => !s)} title="Notifications" className="topIconBtn"><Bell size={16} strokeWidth={1.9} />
+              {!!notifCount && <span className="absolute top-1 right-1 bg-badge-red-text text-white text-[9px] font-bold rounded-full px-[4px] leading-[13px]">{notifCount}</span>}
+            </button>
+            {notifOpen && (
+              <div className="absolute right-0 top-9 w-72 card p-3 z-30">
+                <div className="text-xs font-bold text-ink mb-2">Notifications</div>
+                {notifCount ? (
+                  <div onClick={() => { onNav("planning"); setNotifOpen(false); }} className="hoverRow clickable text-xs text-inksoft rounded-lg p-2 cursor-pointer">
+                    {notifCount} échéance{notifCount > 1 ? "s" : ""} en retard sur votre planning
+                  </div>
+                ) : (
+                  <div className="text-xs text-inkmuted italic px-2 py-1">Aucune notification pour le moment.</div>
+                )}
+              </div>
+            )}
+          </div>
           {toolIcons.map((ic) => {
             const Icon = ic.icon;
             return (
-              <button key={ic.key} className="topIconBtn" title={ic.title} onClick={ic.onClick}>
+              <button key={ic.key} className="hidden md:inline-flex topIconBtn" title={ic.title} onClick={ic.onClick}>
                 <Icon size={16} strokeWidth={1.9} />
                 {!!ic.badge && (
                   <span style={{ position: "absolute", top: 2, right: 2, background: T.amber, color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: 999, padding: "0 4px", lineHeight: "13px" }}>{ic.badge}</span>
@@ -1491,7 +1502,7 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
               </button>
             );
           })}
-          <span style={{ width: 26, height: 26, borderRadius: "50%", background: meColor, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.serif, fontWeight: 700, fontSize: 11, color: "#fff", marginLeft: 6 }}>{me?.[0]}</span>
+          <span className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-[11px] text-white ml-1.5 shrink-0" style={{ background: meColor }}>{me?.[0]}</span>
         </div>
       </div>
       <style>{`.spin{animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -1541,21 +1552,19 @@ function filterClients(clients, search, roleFilter, me, regimeFilter, statutFilt
 }
 function Stamped({ tone = "green", children, small }) {
   const map = {
-    green: { bg: T.greenSoft, fg: T.green }, red: { bg: T.redSoft, fg: T.red },
-    amber: { bg: T.amberSoft, fg: T.amber }, neutral: { bg: T.paperDeep, fg: T.inkMuted },
+    green: "bg-badge-green-bg text-badge-green-text",
+    red: "bg-badge-red-bg text-badge-red-text",
+    amber: "bg-badge-amber-bg text-badge-amber-text",
+    purple: "bg-badge-purple-bg text-badge-purple-text",
+    neutral: "bg-badge-slate-bg text-badge-slate-text",
   };
-  const c = map[tone] || map.neutral;
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 5, fontFamily: T.sans, fontSize: small ? 9.5 : 11, fontWeight: 600,
-      letterSpacing: "0.01em", padding: small ? "2px 7px" : "4px 12px", borderRadius: 999,
-      background: c.bg, color: c.fg,
-    }}>{children}</span>
+    <span className={`badge-pill ${small ? "!text-[9.5px] !px-2 !py-0.5" : ""} ${map[tone] || map.neutral}`}>{children}</span>
   );
 }
 function RoleBadge({ role, name }) {
   if (!name) return null;
-  return <span style={{ fontSize: 11, color: T.inkMuted }}>{role}: <strong style={{ color: T.inkSoft }}>{name}</strong></span>;
+  return <span className="text-[11px] text-inkmuted">{role}: <strong className="text-inksoft">{name}</strong></span>;
 }
 
 /* ============================================================
@@ -1573,33 +1582,32 @@ const STATUT_FILTER_OPTIONS = [
   { value: "inactif", label: "Inactifs" },
   { value: "tous", label: "Tous les dossiers" },
 ];
-const filterFieldStyle = { padding: "7px 10px", borderRadius: 9, fontSize: 12, fontWeight: 600, color: T.inkSoft, background: T.card };
-
 function FilterBar({ roleFilter, setRoleFilter, count, regimeFilter, setRegimeFilter, statutFilter, setStatutFilter, search, setSearch }) {
+  const selectCls = "input-field !py-1.5 !w-auto text-xs md:text-[13px] font-medium cursor-pointer";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 16, padding: "2px 0" }}>
+    <div className="flex items-center gap-2 flex-wrap mb-4 py-0.5">
       {setSearch && (
-        <div style={{ position: "relative", flex: "1 1 200px", minWidth: 160, maxWidth: 260 }}>
-          <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.inkMuted }} />
+        <div className="relative flex-1 min-w-[160px] max-w-[260px]">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-inkmuted" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher un dossier…"
-            className="filterField" style={{ ...filterFieldStyle, width: "100%", padding: "7px 10px 7px 30px", borderRadius: 9 }} />
+            className="input-field !py-1.5 !pl-8 text-xs md:text-[13px] w-full" />
         </div>
       )}
-      <select value={roleFilter || "Tous"} onChange={(e) => setRoleFilter(e.target.value)} className="filterField" style={filterFieldStyle} title="Filtrer par mon rôle">
+      <select value={roleFilter || "Tous"} onChange={(e) => setRoleFilter(e.target.value)} className={selectCls} title="Filtrer par mon rôle">
         {ROLE_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value === "Tous" ? o.label : `Mon rôle : ${o.label}`}</option>)}
       </select>
       {setRegimeFilter && (
-        <select value={regimeFilter || "Tous"} onChange={(e) => setRegimeFilter(e.target.value)} className="filterField" style={{ ...filterFieldStyle, fontFamily: T.mono }} title="Filtrer par régime TVA">
+        <select value={regimeFilter || "Tous"} onChange={(e) => setRegimeFilter(e.target.value)} className={`${selectCls} font-mono`} title="Filtrer par régime TVA">
           <option value="Tous">Régime TVA : Tous</option>
           {REGIMES_TVA.map((r) => <option key={r} value={r}>Régime TVA : {r}</option>)}
         </select>
       )}
       {setStatutFilter && (
-        <select value={statutFilter || "actif"} onChange={(e) => setStatutFilter(e.target.value)} className="filterField" style={filterFieldStyle} title="Filtrer par statut du dossier">
+        <select value={statutFilter || "actif"} onChange={(e) => setStatutFilter(e.target.value)} className={selectCls} title="Filtrer par statut du dossier">
           {STATUT_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>Statut : {o.label}</option>)}
         </select>
       )}
-      <span style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 11.5, color: T.inkMuted, whiteSpace: "nowrap" }}>{count} dossier(s)</span>
+      <span className="ml-auto font-mono text-[11.5px] text-inkmuted whitespace-nowrap">{count} dossier(s)</span>
     </div>
   );
 }
@@ -1746,15 +1754,15 @@ function KpiCard({ label, value, icon: Icon, tone, onClick, index = 0 }) {
 function Panel({ title, children, right, index = 0 }) {
   return (
     <Reveal index={index}>
-      <div style={{ background: T.card, border: `1px solid ${T.line}`, borderRadius: T.radiusLg, boxShadow: T.shadowSm, padding: "22px 24px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <h3 style={{ fontFamily: T.serif, fontSize: 13.5, fontWeight: 700, margin: 0, color: T.ink }}>{title}</h3>{right}
+      <div className="card p-4 md:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm md:text-[15px] font-bold text-ink m-0">{title}</h3>{right}
         </div>{children}
       </div>
     </Reveal>
   );
 }
-function EmptyNote({ text }) { return <div style={{ padding: "18px 4px", color: T.inkMuted, fontSize: 12, fontStyle: "italic" }}>{text}</div>; }
+function EmptyNote({ text }) { return <div className="px-1 py-4 text-inkmuted text-xs italic">{text}</div>; }
 
 /* ============================================================
    CLIENTS REGISTRY
@@ -1799,76 +1807,84 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
   return (
     <div>
       <Reveal>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6, flexWrap: "wrap", gap: 10 }}>
-          <h1 style={{ fontFamily: T.serif, fontSize: 16, fontWeight: 700, color: T.ink, margin: 0 }}>Registre clients</h1>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ display: "none" }} />
-            <button onClick={() => fileInputRef.current?.click()} disabled={importBusy}
-              style={{ display: "flex", alignItems: "center", gap: 6, background: T.card, color: T.inkSoft, border: `1px solid ${T.line}`, borderRadius: 10, padding: "9px 14px", fontSize: 12, fontWeight: 600, cursor: importBusy ? "default" : "pointer" }}>
-              {importBusy ? <Loader2 size={14} className="spin" /> : <ArrowUpRight size={14} style={{ transform: "rotate(-90deg)" }} />}
-              Importer (Excel/CSV)
+        <div className="flex items-baseline justify-between mb-1.5 flex-wrap gap-2.5">
+          <h1 className="text-base md:text-lg font-bold text-ink m-0">Registre clients</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
+            <button onClick={() => fileInputRef.current?.click()} disabled={importBusy} className="btn-secondary !py-2">
+              {importBusy ? <Loader2 size={14} className="spin" /> : <ArrowUpRight size={14} className="-rotate-90" />}
+              <span className="hidden sm:inline">Importer (Excel/CSV)</span>
             </button>
-            <button onClick={() => exportClientsToExcel(allClients || clients)}
-              style={{ display: "flex", alignItems: "center", gap: 6, background: T.card, color: T.inkSoft, border: `1px solid ${T.line}`, borderRadius: 10, padding: "9px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-              <ArrowUpRight size={14} style={{ transform: "rotate(90deg)" }} /> Exporter la liste (Excel)
+            <button onClick={() => exportClientsToExcel(allClients || clients)} className="btn-secondary !py-2">
+              <ArrowUpRight size={14} className="rotate-90" /> <span className="hidden sm:inline">Exporter la liste (Excel)</span>
             </button>
-            <button onClick={onAdd} style={{ display: "flex", alignItems: "center", gap: 6, background: T.navy, color: "#fff", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-              <Plus size={15} /> Nouveau client
+            <button onClick={onAdd} className="btn-primary !py-2">
+              <Plus size={15} /> <span className="hidden sm:inline">Nouveau client</span>
             </button>
           </div>
         </div>
         {importMsg && (
-          <div style={{
-            marginTop: 8, fontSize: 12, fontWeight: 600, padding: "6px 10px", borderRadius: 8, display: "inline-block",
-            color: importMsg.tone === "green" ? T.green : importMsg.tone === "red" ? T.red : T.amber,
-            background: importMsg.tone === "green" ? T.greenSoft : importMsg.tone === "red" ? T.redSoft : T.amberSoft,
-          }}>{importMsg.text}</div>
+          <div className={`mt-2 text-xs font-semibold px-2.5 py-1.5 rounded-lg inline-block ${importMsg.tone === "green" ? "bg-badge-green-bg text-badge-green-text" : importMsg.tone === "red" ? "bg-badge-red-bg text-badge-red-text" : "bg-badge-amber-bg text-badge-amber-text"}`}>{importMsg.text}</div>
         )}
       </Reveal>
-      <p style={{ color: T.inkMuted, fontSize: 12, marginTop: 6, marginBottom: 20 }}>Cliquez un dossier pour ouvrir sa fiche complète.</p>
+      <p className="text-inkmuted text-xs mt-1.5 mb-5">Cliquez un dossier pour ouvrir sa fiche complète.</p>
       <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter}
         statutFilter={statutFilter} setStatutFilter={setStatutFilter} search={search} setSearch={setSearch} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1.3fr 40px", padding: "0 18px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: T.inkMuted, fontWeight: 600, marginBottom: 10 }}>
+      {/* En-tête colonnes : visible à partir de md, masqué sur mobile (les dossiers s'affichent en cartes empilées) */}
+      <div className="hidden md:grid gap-0" style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1.3fr 40px", padding: "0 18px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: T.inkMuted, fontWeight: 600, marginBottom: 10 }}>
         <div>Dossier</div><div>SIREN</div><div>Rôles</div><div>Clôture</div><div>Régime</div><div>Statuts</div><div />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="flex flex-col gap-2">
         {Object.keys(grouped).sort().map((letter) => (
           <div key={letter}>
-            <div style={{ padding: "4px 6px", fontFamily: T.mono, fontSize: 10.5, fontWeight: 700, color: T.navy, letterSpacing: "0.1em" }}>{letter}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="px-1.5 py-1 font-mono text-[10.5px] font-bold text-accent-deep tracking-widest">{letter}</div>
+            <div className="flex flex-col gap-2">
               {grouped[letter].map((c) => {
                 rowIndex += 1;
+                const statusBadge = isBilanLate(c) ? <Stamped tone="red" small>Bilan retard</Stamped>
+                  : isTvaLate(c) ? <Stamped tone="amber" small>TVA</Stamped>
+                  : <Stamped tone="green" small>À jour</Stamped>;
+                const roles = [c.collab === me && "Collaborateur", c.expert === me && "Expert", c.chefMission === me && "Chef de mission"].filter(Boolean);
                 return (
                   <Reveal key={c.id} index={rowIndex}>
-                    <div className="hoverRow clickable" onClick={() => setSelected(c.id)} style={{
-                      display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1.3fr 40px", padding: "14px 18px", alignItems: "center", fontSize: 12,
-                      borderRadius: T.radiusSm, border: `1px solid ${selected === c.id ? T.navy : T.line}`,
-                      background: selected === c.id ? T.navySoft : T.card, boxShadow: T.shadowSm,
-                      opacity: c.statutDossier === "inactif" ? 0.55 : 1,
-                    }}>
-                      <div style={{ fontWeight: 600, color: T.ink, display: "flex", alignItems: "center", gap: 8 }}>
+                    {/* Ligne tableau (md et +) */}
+                    <div onClick={() => setSelected(c.id)}
+                      className={`hoverRow clickable hidden md:grid items-center rounded-xl border px-4 py-3.5 text-xs ${selected === c.id ? "border-accent-deep bg-accent-soft" : "border-line bg-card shadow-xs"} ${c.statutDossier === "inactif" ? "opacity-55" : ""}`}
+                      style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1.3fr 40px" }}>
+                      <div className="font-semibold text-ink flex items-center gap-2">
                         {c.nom}
                         {c.statutDossier === "inactif" && <Stamped tone="neutral" small>Inactif</Stamped>}
                       </div>
-                      <div style={{ fontFamily: T.mono, fontSize: 12, color: T.inkMuted }}>{c.siren}</div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 1, fontSize: 10.5, color: T.inkMuted }}>
-                        {c.collab === me && <span>Collaborateur</span>}
-                        {c.expert === me && <span>Expert</span>}
-                        {c.chefMission === me && <span>Chef de mission</span>}
+                      <div className="font-mono text-xs text-inkmuted">{c.siren}</div>
+                      <div className="flex flex-col gap-0.5 text-[10.5px] text-inkmuted">
+                        {roles.map((r) => <span key={r}>{r}</span>)}
                       </div>
-                      <div style={{ fontFamily: T.mono, fontSize: 11.5, color: T.inkMuted }}>
+                      <div className="font-mono text-[11.5px] text-inkmuted">
                         <input type="date" defaultValue={c.dateCloture || ""} onClick={(e) => e.stopPropagation()}
                           onChange={(e) => onUpdate(c.id, { dateCloture: e.target.value })}
-                          style={{ border: "none", background: "transparent", fontFamily: T.mono, fontSize: 11.5, color: T.inkMuted, width: 118 }} />
+                          className="border-none bg-transparent font-mono text-[11.5px] text-inkmuted w-[118px]" />
                       </div>
-                      <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: T.mono }}>{c.tvaRegime || "—"}</div>
-                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                        {isBilanLate(c) && <Stamped tone="red" small>Bilan retard</Stamped>}
-                        {isTvaLate(c) && <Stamped tone="amber" small>TVA</Stamped>}
-                        {!isBilanLate(c) && !isTvaLate(c) && <Stamped tone="green" small>À jour</Stamped>}
+                      <div className="text-xs text-inksoft font-mono">{c.tvaRegime || "—"}</div>
+                      <div className="flex gap-1.5 flex-wrap">{statusBadge}</div>
+                      <ChevronRight size={15} className="text-inkmuted" />
+                    </div>
+                    {/* Carte empilée (mobile) */}
+                    <div onClick={() => setSelected(c.id)}
+                      className={`hoverRow clickable md:hidden rounded-xl border p-3.5 flex flex-col gap-2 ${selected === c.id ? "border-accent-deep bg-accent-soft" : "border-line bg-card shadow-xs"} ${c.statutDossier === "inactif" ? "opacity-55" : ""}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-ink text-sm">{c.nom}</span>
+                        <ChevronRight size={15} className="text-inkmuted shrink-0" />
                       </div>
-                      <ChevronRight size={15} color={T.inkMuted} />
+                      <div className="flex items-center gap-2 flex-wrap text-[11px] text-inkmuted">
+                        <span className="font-mono">{c.siren || "—"}</span>
+                        {roles.length > 0 && <span>· {roles.join(", ")}</span>}
+                        {c.tvaRegime && <span className="font-mono">· {c.tvaRegime}</span>}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {statusBadge}
+                        {c.statutDossier === "inactif" && <Stamped tone="neutral" small>Inactif</Stamped>}
+                      </div>
                     </div>
                   </Reveal>
                 );
@@ -2083,61 +2099,22 @@ function ToggleBtn({ on, onClick, tone = "green" }) {
 }
 
 function AcomptesTab({ client, onUpdate }) {
-  const is = client.is || {}; const cfe = client.cfe || {}; const tvaAcompte = client.tvaAcompte || {};
+  const is = client.is || {}; const cfe = client.cfe || {};
   const toggleIs = (f) => onUpdate(client.id, { is: { ...is, [f]: !is[f] } });
   const toggleCfe = (f) => onUpdate(client.id, { cfe: { ...cfe, [f]: !cfe[f] } });
-  const toggleTva = (f) => onUpdate(client.id, { tvaAcompte: { ...tvaAcompte, [f]: !tvaAcompte[f] } });
-
-  const isMontant = computeIsAcompte(is.nMoins1);
-  const cfeMontant = computeCfeAcompte(cfe.nMoins1);
-  const tvaJuillet = computeTvaAcompteJuillet(tvaAcompte.nMoins1);
-  const tvaDecembre = computeTvaAcompteDecembre(tvaAcompte.nMoins1);
-
   return (
     <div>
       <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "4px 0 8px" }}>Impôt sur les sociétés</h4>
-      <FieldRow label="IS N-1">
-        <TextInput defaultValue={is.nMoins1} onCommit={(v) => onUpdate(client.id, { is: { ...is, nMoins1: v ? parseFloat(v) : "" } })} placeholder="ex. 8000" width={100} />
-      </FieldRow>
-      <FieldRow label="Concerné (IS N-1 > 3000€)"><Stamped tone={isIsConcerne(client) ? "amber" : "neutral"} small>{isIsConcerne(client) ? "Oui" : "Non"}</Stamped></FieldRow>
-      {isIsConcerne(client) && (
-        <div style={{ fontSize: 11, color: T.inkMuted, margin: "4px 0 8px" }}>Acompte calculé : {fmtEUR(isMontant)} par échéance (25% de l'IS N-1)</div>
-      )}
-      <FieldRow label={`Acompte mars${isIsConcerne(client) ? ` (${fmtEUR(isMontant)})` : ""}`}><ToggleBtn on={!!is.mars} onClick={() => toggleIs("mars")} /></FieldRow>
-      <FieldRow label={`Acompte juin${isIsConcerne(client) ? ` (${fmtEUR(isMontant)})` : ""}`}><ToggleBtn on={!!is.juin} onClick={() => toggleIs("juin")} /></FieldRow>
-      <FieldRow label={`Acompte septembre${isIsConcerne(client) ? ` (${fmtEUR(isMontant)})` : ""}`}><ToggleBtn on={!!is.sept} onClick={() => toggleIs("sept")} /></FieldRow>
-      <FieldRow label={`Acompte décembre${isIsConcerne(client) ? ` (${fmtEUR(isMontant)})` : ""}`}><ToggleBtn on={!!is.dec} onClick={() => toggleIs("dec")} /></FieldRow>
+      <FieldRow label="Concerné (IS N-1 > 3000€)"><ToggleBtn on={!!is.concerne} onClick={() => toggleIs("concerne")} /></FieldRow>
+      <FieldRow label="Acompte mars"><ToggleBtn on={!!is.mars} onClick={() => toggleIs("mars")} /></FieldRow>
+      <FieldRow label="Acompte juin"><ToggleBtn on={!!is.juin} onClick={() => toggleIs("juin")} /></FieldRow>
+      <FieldRow label="Acompte septembre"><ToggleBtn on={!!is.sept} onClick={() => toggleIs("sept")} /></FieldRow>
+      <FieldRow label="Acompte décembre"><ToggleBtn on={!!is.dec} onClick={() => toggleIs("dec")} /></FieldRow>
       <FieldRow label="Solde IS"><ToggleBtn on={!!is.solde} onClick={() => toggleIs("solde")} /></FieldRow>
-
       <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "20px 0 8px" }}>CFE</h4>
-      <FieldRow label="CFE N-1">
-        <TextInput defaultValue={cfe.nMoins1} onCommit={(v) => onUpdate(client.id, { cfe: { ...cfe, nMoins1: v ? parseFloat(v) : "" } })} placeholder="ex. 4000" width={100} />
-      </FieldRow>
-      <FieldRow label="Concerné (CFE N-1 > 3000€)"><Stamped tone={isCfeConcerne(client) ? "amber" : "neutral"} small>{isCfeConcerne(client) ? "Oui" : "Non"}</Stamped></FieldRow>
-      {isCfeConcerne(client) && (
-        <div style={{ fontSize: 11, color: T.inkMuted, margin: "4px 0 8px" }}>Acompte calculé : {fmtEUR(cfeMontant)} en juin (50% de la CFE N-1), solde en décembre</div>
-      )}
-      <FieldRow label={`Acompte juin${isCfeConcerne(client) ? ` (${fmtEUR(cfeMontant)})` : ""}`}><ToggleBtn on={!!cfe.juin} onClick={() => toggleCfe("juin")} /></FieldRow>
+      <FieldRow label="Concerné (CFE N-1 > 3000€)"><ToggleBtn on={!!cfe.concerne} onClick={() => toggleCfe("concerne")} /></FieldRow>
+      <FieldRow label="Acompte juin"><ToggleBtn on={!!cfe.juin} onClick={() => toggleCfe("juin")} /></FieldRow>
       <FieldRow label="Solde décembre"><ToggleBtn on={!!cfe.dec} onClick={() => toggleCfe("dec")} /></FieldRow>
-
-      <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "20px 0 8px" }}>Acompte TVA (régime CA12)</h4>
-      {client.tvaRegime !== "CA12" ? (
-        <div style={{ fontSize: 11.5, color: T.inkMuted, fontStyle: "italic" }}>Applicable uniquement aux dossiers en régime CA12.</div>
-      ) : (
-        <>
-          <FieldRow label="TVA N-1">
-            <TextInput defaultValue={tvaAcompte.nMoins1} onCommit={(v) => onUpdate(client.id, { tvaAcompte: { ...tvaAcompte, nMoins1: v ? parseFloat(v) : "" } })} placeholder="ex. 3000" width={100} />
-          </FieldRow>
-          <FieldRow label="Concerné (TVA N-1 > 1000€)"><Stamped tone={isTvaAcompteConcerne(client) ? "amber" : "neutral"} small>{isTvaAcompteConcerne(client) ? "Oui" : "Non"}</Stamped></FieldRow>
-          {isTvaAcompteConcerne(client) && (
-            <div style={{ fontSize: 11, color: T.inkMuted, margin: "4px 0 8px" }}>
-              Acomptes calculés : {fmtEUR(tvaJuillet)} en juillet (55%) et {fmtEUR(tvaDecembre)} en décembre (40%) de la TVA N-1 ; régularisation sur la déclaration CA12 annuelle.
-            </div>
-          )}
-          <FieldRow label={`Acompte juillet${isTvaAcompteConcerne(client) ? ` (${fmtEUR(tvaJuillet)})` : ""}`}><ToggleBtn on={!!tvaAcompte.juillet} onClick={() => toggleTva("juillet")} /></FieldRow>
-          <FieldRow label={`Acompte décembre${isTvaAcompteConcerne(client) ? ` (${fmtEUR(tvaDecembre)})` : ""}`}><ToggleBtn on={!!tvaAcompte.decembre} onClick={() => toggleTva("decembre")} /></FieldRow>
-        </>
-      )}
     </div>
   );
 }
@@ -2263,47 +2240,35 @@ function BilanTable({ clients, onUpdate }) {
    ============================================================ */
 function AcomptesView({ clients, search, roleFilter, setRoleFilter, me, onUpdate }) {
   const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
-  const isConcerned = filtered.filter(isIsConcerne);
-  const cfeConcerned = filtered.filter(isCfeConcerne);
-  const tvaConcerned = filtered.filter(isTvaAcompteConcerne);
+  const isConcerned = filtered.filter((c) => c.is?.concerne);
+  const cfeConcerned = filtered.filter((c) => c.cfe?.concerne);
   return (
     <div>
-      <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Impôts &amp; cotisations</h1></Reveal>
-      <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18 }}>
-        Acomptes calculés automatiquement à partir de l'IS, la CFE et la TVA N-1 renseignés sur chaque dossier
-        (seuils : 3 000 € pour IS/CFE, 1 000 € pour la TVA en CA12).
-      </p>
+      <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Acomptes IS &amp; CFE</h1></Reveal>
+      <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18 }}>Dossiers dont l'impôt N-1 dépasse 3 000 €.</p>
       <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} />
       <Panel title={`Acomptes IS (${isConcerned.length} dossiers concernés)`}>
-        {isConcerned.length === 0 ? <EmptyNote text="Aucun dossier concerné pour l'instant (renseignez l'IS N-1 dans la fiche du dossier)." /> : isConcerned.map((c) => (
-          <AcompteRow key={c.id} client={c} fields={[["mars", "Mars"], ["juin", "Juin"], ["sept", "Sept"], ["dec", "Déc"], ["solde", "Solde"]]} field="is" montant={computeIsAcompte(c.is?.nMoins1)} onUpdate={onUpdate} />
+        {isConcerned.length === 0 ? <EmptyNote text="Aucun dossier marqué concerné pour l'instant." /> : isConcerned.map((c) => (
+          <AcompteRow key={c.id} client={c} fields={[["mars", "Mars"], ["juin", "Juin"], ["sept", "Sept"], ["dec", "Déc"], ["solde", "Solde"]]} field="is" onUpdate={onUpdate} />
         ))}
       </Panel>
       <div style={{ height: 16 }} />
       <Panel title={`Acomptes CFE (${cfeConcerned.length} dossiers concernés)`}>
-        {cfeConcerned.length === 0 ? <EmptyNote text="Aucun dossier concerné pour l'instant (renseignez la CFE N-1 dans la fiche du dossier)." /> : cfeConcerned.map((c) => (
-          <AcompteRow key={c.id} client={c} fields={[["juin", "Juin"], ["dec", "Déc (solde)"]]} field="cfe" montant={computeCfeAcompte(c.cfe?.nMoins1)} onUpdate={onUpdate} />
-        ))}
-      </Panel>
-      <div style={{ height: 16 }} />
-      <Panel title={`Acomptes TVA — CA12 (${tvaConcerned.length} dossiers concernés)`}>
-        {tvaConcerned.length === 0 ? <EmptyNote text="Aucun dossier concerné pour l'instant (renseignez la TVA N-1 dans la fiche des dossiers en régime CA12)." /> : tvaConcerned.map((c) => (
-          <AcompteRow key={c.id} client={c} fields={[["juillet", "Juillet (55%)"], ["decembre", "Déc (40%)"]]} field="tvaAcompte"
-            montants={[computeTvaAcompteJuillet(c.tvaAcompte?.nMoins1), computeTvaAcompteDecembre(c.tvaAcompte?.nMoins1)]} onUpdate={onUpdate} />
+        {cfeConcerned.length === 0 ? <EmptyNote text="Aucun dossier marqué concerné pour l'instant." /> : cfeConcerned.map((c) => (
+          <AcompteRow key={c.id} client={c} fields={[["juin", "Juin"], ["dec", "Déc (solde)"]]} field="cfe" onUpdate={onUpdate} />
         ))}
       </Panel>
     </div>
   );
 }
-function AcompteRow({ client, fields, field, montant, montants, onUpdate }) {
+function AcompteRow({ client, fields, field, onUpdate }) {
   const obj = client[field] || {};
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 4px", borderBottom: `1px solid ${T.line}`, flexWrap: "wrap" }}>
       <div style={{ flex: 1, fontWeight: 600, fontSize: 12.5, minWidth: 140 }}>{client.nom}</div>
-      {fields.map(([k, label], i) => (
+      {fields.map(([k, label]) => (
         <label key={k} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: T.inkMuted }}>
-          <input type="checkbox" checked={!!obj[k]} onChange={() => onUpdate(client.id, { [field]: { ...obj, [k]: !obj[k] } })} />
-          {label} {montants ? `(${fmtEUR(montants[i])})` : montant != null ? `(${fmtEUR(montant)})` : ""}
+          <input type="checkbox" checked={!!obj[k]} onChange={() => onUpdate(client.id, { [field]: { ...obj, [k]: !obj[k] } })} /> {label}
         </label>
       ))}
     </div>
@@ -2441,29 +2406,11 @@ function RegimeChangeView({ clients, me, search, onUpdate }) {
     setMotifAutre("");
   };
 
- const allHistory = useMemo(() => {
+  const allHistory = useMemo(() => {
     const rows = [];
-    clients.forEach((c) => (c.regimeHistory || []).forEach((h, idx) => rows.push({ ...h, client: c.nom, clientId: c.id, idx })));
+    clients.forEach((c) => (c.regimeHistory || []).forEach((h) => rows.push({ ...h, client: c.nom })));
     return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
   }, [clients]);
-
-  const deleteHistoryEntry = (clientId, idx) => {
-    const target = clients.find((c) => c.id === clientId);
-    if (!target) return;
-    const history = target.regimeHistory || [];
-    const entry = history[idx];
-    if (!entry) return;
-    if (!window.confirm(`Supprimer ce changement de régime pour ${target.nom} ?`)) return;
-    const newHistory = history.filter((_, i) => i !== idx);
-    const patch = { regimeHistory: newHistory };
-    // Si c'est le dernier changement enregistré pour ce dossier et qu'il correspond
-    // au régime actuellement affiché, on revient au régime précédent.
-    const isLatestForClient = idx === history.length - 1;
-    if (isLatestForClient && target.tvaRegime === entry.nouveau) {
-      patch.tvaRegime = entry.ancien && entry.ancien !== "—" ? entry.ancien : "";
-    }
-    onUpdate(clientId, patch);
-  };
 
   return (
     <div>
@@ -2503,21 +2450,17 @@ function RegimeChangeView({ clients, me, search, onUpdate }) {
       <Panel title={`Historique des changements (${allHistory.length})`} right={<History size={16} color={T.inkMuted} />}>
         {allHistory.length === 0 ? <EmptyNote text="Aucun changement de régime enregistré pour l'instant." /> : (
           <div>
-            <div style={{ display: "grid", gridTemplateColumns: "1.6fr 0.9fr 0.9fr 1.6fr 0.9fr 0.9fr 34px", padding: "6px 4px", fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.05em", color: T.inkMuted, fontWeight: 600, borderBottom: `1px solid ${T.line}` }}>
-              <div>Dossier</div><div>Ancien</div><div>Nouveau</div><div>Motif</div><div>Date</div><div>Par</div><div />
+            <div style={{ display: "grid", gridTemplateColumns: "1.6fr 0.9fr 0.9fr 1.6fr 0.9fr 0.9fr", padding: "6px 4px", fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.05em", color: T.inkMuted, fontWeight: 600, borderBottom: `1px solid ${T.line}` }}>
+              <div>Dossier</div><div>Ancien</div><div>Nouveau</div><div>Motif</div><div>Date</div><div>Par</div>
             </div>
             {allHistory.map((h, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.6fr 0.9fr 0.9fr 1.6fr 0.9fr 0.9fr 34px", padding: "9px 4px", fontSize: 12.5, borderBottom: `1px solid ${T.line}`, alignItems: "center" }}>
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.6fr 0.9fr 0.9fr 1.6fr 0.9fr 0.9fr", padding: "9px 4px", fontSize: 12.5, borderBottom: `1px solid ${T.line}`, alignItems: "center" }}>
                 <div style={{ fontWeight: 600 }}>{h.client}</div>
                 <div style={{ fontFamily: T.mono, color: T.inkMuted }}>{h.ancien}</div>
                 <div style={{ fontFamily: T.mono, color: T.green, fontWeight: 600 }}>{h.nouveau}</div>
                 <div style={{ color: T.inkSoft }}>{h.motif}</div>
                 <div style={{ fontFamily: T.mono, fontSize: 11.5, color: T.inkMuted }}>{fmtFR(h.date)}</div>
                 <div style={{ fontSize: 12 }}>{h.par}</div>
-                <button onClick={() => deleteHistoryEntry(h.clientId, h.idx)} title="Supprimer cette entrée (erreur de saisie)"
-                  style={{ background: "none", border: "none", cursor: "pointer", color: T.inkMuted, padding: 4 }}>
-                  <Trash2 size={13} />
-                </button>
               </div>
             ))}
           </div>
@@ -2643,10 +2586,13 @@ const navBtnStyle = { width: 30, height: 30, borderRadius: 10, border: `1px soli
    Aujourd'hui / En retard / Cette semaine / À venir, avec filtres
    collaborateur / client / statut / priorité.
    ============================================================ */
+const TASK_STATUT_TONE = { a_faire: "neutral", en_cours: "purple", termine: "green", bloque: "red" };
+const TASK_PRIORITE_TONE = { faible: "neutral", normale: "neutral", haute: "amber", urgente: "red" };
+
 function TasksPage({ tasks, clients, team, me, myRow, onCreate, onUpdate, onComplete, onDelete, onOpenClient }) {
   const [filterResponsable, setFilterResponsable] = useState("Tous");
   const [filterClient, setFilterClient] = useState("Tous");
-  const [filterStatut, setFilterStatut] = useState("Toutes"); // "Toutes" ou un code TASK_STATUTS
+  const [filterStatut, setFilterStatut] = useState("Toutes");
   const [filterPriorite, setFilterPriorite] = useState("Toutes");
   const [showForm, setShowForm] = useState(false);
 
@@ -2670,29 +2616,26 @@ function TasksPage({ tasks, clients, team, me, myRow, onCreate, onUpdate, onComp
       return new Date(y, m - 1, d);
     };
     const b = bucketizeDeadlines(filtered.filter((t) => t.statut !== "termine"), getDate);
-    // Tâches sans échéance : affichées à part, dans "À venir"
     const sansEcheance = filtered.filter((t) => t.statut !== "termine" && !t.date_echeance);
-    b.avenir = [...b.avenir, ...sansEcheance.filter((t) => !b.avenir.includes(t))];
-    Object.keys(b).forEach((k) => { b[k] = [...new Set(b[k])].sort((x, y) => taskSortWeight(x) - taskSortWeight(y)); });
+    b.avenir = [...new Set([...b.avenir, ...sansEcheance])];
+    Object.keys(b).forEach((k) => { b[k] = b[k].sort((x, y) => taskSortWeight(x) - taskSortWeight(y)); });
     return b;
   }, [filtered]);
 
   const nbTermineesFiltrees = filtered.filter((t) => t.statut === "termine").length;
+  const selectCls = "input-field !py-1.5 !w-auto text-xs md:text-[13px] font-medium cursor-pointer";
 
   return (
     <div>
       <Reveal>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 18 }}>
+        <div className="flex items-start justify-between mb-4">
           <div>
-            <h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: 0 }}>Mes tâches</h1>
-            <p style={{ color: T.inkMuted, fontSize: 12.5, margin: "4px 0 0" }}>
+            <h1 className="font-bold text-[17px] text-ink m-0">Mes tâches</h1>
+            <p className="text-inkmuted text-xs mt-1 mb-0">
               {filtered.length - nbTermineesFiltrees} tâche(s) active(s), {nbTermineesFiltrees} terminée(s) sur la sélection.
             </p>
           </div>
-          <button onClick={() => setShowForm((v) => !v)} style={{
-            display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 10, border: "none",
-            background: T.navy, color: "#fff", fontWeight: 600, fontSize: 12.5, cursor: "pointer",
-          }}>
+          <button onClick={() => setShowForm((v) => !v)} className="btn-primary">
             <Plus size={14} /> Nouvelle tâche
           </button>
         </div>
@@ -2703,30 +2646,30 @@ function TasksPage({ tasks, clients, team, me, myRow, onCreate, onUpdate, onComp
           onSubmit={async (payload) => { await onCreate(payload); setShowForm(false); }} />
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 18px" }}>
-        <select value={filterResponsable} onChange={(e) => setFilterResponsable(e.target.value)} className="filterField" style={filterFieldStyle}>
+      <div className="flex items-center gap-2 flex-wrap mb-4">
+        <select value={filterResponsable} onChange={(e) => setFilterResponsable(e.target.value)} className={selectCls}>
           <option value="Tous">Collaborateur : Tous</option>
           {(team || []).map((t) => <option key={t.id} value={t.id}>Collaborateur : {t.nom}</option>)}
         </select>
-        <select value={filterClient} onChange={(e) => setFilterClient(e.target.value)} className="filterField" style={filterFieldStyle}>
+        <select value={filterClient} onChange={(e) => setFilterClient(e.target.value)} className={selectCls}>
           <option value="Tous">Client : Tous</option>
           {clients.map((c) => <option key={c.id} value={c.id}>Client : {c.nom}</option>)}
         </select>
-        <select value={filterStatut} onChange={(e) => setFilterStatut(e.target.value)} className="filterField" style={filterFieldStyle}>
+        <select value={filterStatut} onChange={(e) => setFilterStatut(e.target.value)} className={selectCls}>
           <option value="Toutes">Statut : Tous</option>
           {TASK_STATUTS.map((s) => <option key={s.code} value={s.code}>Statut : {s.label}</option>)}
         </select>
-        <select value={filterPriorite} onChange={(e) => setFilterPriorite(e.target.value)} className="filterField" style={filterFieldStyle}>
+        <select value={filterPriorite} onChange={(e) => setFilterPriorite(e.target.value)} className={selectCls}>
           <option value="Toutes">Priorité : Toutes</option>
           {TASK_PRIORITES.map((p) => <option key={p.code} value={p.code}>Priorité : {p.label}</option>)}
         </select>
       </div>
 
       {["retard", "aujourdhui", "semaine", "avenir"].map((bucketKey) => (
-        <div key={bucketKey} style={{ marginBottom: 18 }}>
+        <div key={bucketKey} className="mb-5">
           <Panel title={`${DEADLINE_BUCKET_LABELS[bucketKey]} (${buckets[bucketKey]?.length || 0})`}>
             {!buckets[bucketKey]?.length ? <EmptyNote text="Rien ici." /> : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="flex flex-col gap-2">
                 {buckets[bucketKey].map((t, i) => (
                   <TaskRow key={t.id} task={t} index={i} client={clientById[t.client_id]} responsable={memberById[t.responsable_id]}
                     onOpenClient={onOpenClient} onUpdate={onUpdate} onComplete={onComplete} onDelete={onDelete} />
@@ -2741,33 +2684,28 @@ function TasksPage({ tasks, clients, team, me, myRow, onCreate, onUpdate, onComp
 }
 
 function TaskRow({ task, index, client, responsable, onOpenClient, onUpdate, onComplete, onDelete }) {
-  const priorite = TASK_PRIORITE_BY_CODE[task.priorite];
-  const statut = TASK_STATUT_BY_CODE[task.statut];
-  const prioriteColor = PILOTAGE_COLORS[priorite?.color === "gray" ? "gray" : (task.priorite === "urgente" ? "red" : task.priorite === "haute" ? "orange" : "gray")];
-  const statutColor = PILOTAGE_COLORS[statut?.color] || PILOTAGE_COLORS.gray;
   return (
     <Reveal index={index} delay={0.05}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: T.radiusSm, border: `1px solid ${T.line}`, background: T.paper }}>
-        <button onClick={() => onComplete(task)} title="Marquer terminé" style={{
-          width: 20, height: 20, borderRadius: "50%", border: `1.5px solid ${T.green}`, background: "none", cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-        }}>
-          <Check size={12} color={T.green} />
+      <div className="flex items-center gap-3 px-3.5 py-3 rounded-xl border border-line bg-white">
+        <button onClick={() => onComplete(task)} title="Marquer terminé"
+          className="w-5 h-5 rounded-full border-[1.5px] border-badge-green-text flex items-center justify-center shrink-0 hover:bg-badge-green-bg transition-colors">
+          <Check size={12} className="text-badge-green-text" />
         </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className={client ? "hoverRow clickable" : ""} onClick={() => client && onOpenClient(client.id)} style={{ fontWeight: 600, fontSize: 12.5, color: T.ink, display: "inline-block" }}>
+        <div className="flex-1 min-w-0">
+          <div className={`font-semibold text-xs text-ink inline-block ${client ? "cursor-pointer hover:text-accent" : ""}`}
+            onClick={() => client && onOpenClient(client.id)}>
             {client ? client.nom : "Dossier non lié"}
           </div>
-          <div style={{ fontSize: 11.5, color: T.inkMuted }}>{task.nom}{task.commentaire ? ` — ${task.commentaire}` : ""}</div>
+          <div className="text-[11.5px] text-inkmuted">{task.nom}{task.commentaire ? ` — ${task.commentaire}` : ""}</div>
         </div>
         {responsable && <RoleBadge role="Resp." name={responsable.nom} />}
         <select value={task.statut} onChange={(e) => onUpdate(task.id, { statut: e.target.value })}
-          style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 999, border: "none", background: statutColor.bg, color: statutColor.text, cursor: "pointer" }}>
+          className="input-field !w-auto !py-1 !px-2 text-[10.5px] font-bold cursor-pointer">
           {TASK_STATUTS.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
         </select>
-        <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: prioriteColor.bg, color: prioriteColor.text }}>{priorite?.label}</span>
-        {task.date_echeance && <span style={{ fontFamily: T.mono, fontSize: 10.5, color: T.inkMuted, whiteSpace: "nowrap" }}>{fmtFR(task.date_echeance)}</span>}
-        <button onClick={() => onDelete(task.id)} title="Supprimer" style={{ background: "none", border: "none", cursor: "pointer", color: T.inkMuted, display: "flex" }}>
+        <Stamped tone={TASK_PRIORITE_TONE[task.priorite]} small>{TASK_PRIORITE_BY_CODE[task.priorite]?.label}</Stamped>
+        {task.date_echeance && <span className="font-mono text-[10.5px] text-inkmuted whitespace-nowrap">{fmtFR(task.date_echeance)}</span>}
+        <button onClick={() => onDelete(task.id)} title="Supprimer" className="text-inkmuted hover:text-badge-red-text transition-colors">
           <Trash2 size={13} />
         </button>
       </div>
@@ -2796,38 +2734,37 @@ function NewTaskForm({ clients, team, onCancel, onSubmit }) {
 
   return (
     <Panel title="Nouvelle tâche">
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
         <FieldRow label="Nom de la tâche">
           <input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex : Relancer client pour justificatifs"
-            style={{ ...filterFieldStyle, width: 220, border: `1px solid ${T.line}` }} />
+            className="input-field !w-56" />
         </FieldRow>
         <FieldRow label="Client">
-          <select value={clientId} onChange={(e) => setClientId(e.target.value)} style={filterFieldStyle}>
+          <select value={clientId} onChange={(e) => setClientId(e.target.value)} className="input-field !w-auto">
             {clients.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
           </select>
         </FieldRow>
         <FieldRow label="Responsable">
-          <select value={responsableId} onChange={(e) => setResponsableId(e.target.value)} style={filterFieldStyle}>
+          <select value={responsableId} onChange={(e) => setResponsableId(e.target.value)} className="input-field !w-auto">
             <option value="">— Non assigné —</option>
             {(team || []).map((t) => <option key={t.id} value={t.id}>{t.nom}</option>)}
           </select>
         </FieldRow>
         <FieldRow label="Priorité">
-          <select value={priorite} onChange={(e) => setPriorite(e.target.value)} style={filterFieldStyle}>
+          <select value={priorite} onChange={(e) => setPriorite(e.target.value)} className="input-field !w-auto">
             {TASK_PRIORITES.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
           </select>
         </FieldRow>
         <FieldRow label="Échéance">
-          <input type="date" value={dateEcheance} onChange={(e) => setDateEcheance(e.target.value)} style={{ ...filterFieldStyle, border: `1px solid ${T.line}` }} />
+          <input type="date" value={dateEcheance} onChange={(e) => setDateEcheance(e.target.value)} className="input-field !w-auto" />
         </FieldRow>
       </div>
       <FieldRow label="Commentaire">
-        <textarea value={commentaire} onChange={(e) => setCommentaire(e.target.value)} rows={2}
-          style={{ ...filterFieldStyle, width: "100%", border: `1px solid ${T.line}`, resize: "vertical", fontFamily: T.sans }} />
+        <textarea value={commentaire} onChange={(e) => setCommentaire(e.target.value)} rows={2} className="input-field !w-full resize-y" />
       </FieldRow>
-      <div style={{ display: "flex", gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
-        <button onClick={onCancel} style={{ padding: "8px 14px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, color: T.inkSoft, cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>Annuler</button>
-        <button onClick={submit} disabled={saving || !nom.trim()} style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.navy, color: "#fff", cursor: "pointer", fontSize: 12.5, fontWeight: 600, opacity: saving || !nom.trim() ? 0.6 : 1 }}>
+      <div className="flex gap-2 mt-4 justify-end">
+        <button onClick={onCancel} className="btn-secondary">Annuler</button>
+        <button onClick={submit} disabled={saving || !nom.trim()} className="btn-primary disabled:opacity-60">
           {saving ? "Création…" : "Créer la tâche"}
         </button>
       </div>
