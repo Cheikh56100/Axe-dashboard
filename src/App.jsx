@@ -1486,7 +1486,6 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
       ],
     },
     {
-      {
       id: "juridique", label: "Juridique",
       items: [
         { id: "age", label: "Assemblées (AGE / AGO)", icon: Building2, badge: counts.ageAlert, badgeTone: "amber" },
