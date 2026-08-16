@@ -69,6 +69,41 @@ function startOfWeek(d) {
   return x;
 }
 
+/* ---- Acomptes IS / CFE / TVA — calcul automatique à partir du N-1 ---- */
+function fmtEUR(n) {
+  const v = parseFloat(n);
+  if (!v && v !== 0) return "—";
+  return v.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+}
+function isIsConcerne(client) {
+  const n = parseFloat(client.is?.nMoins1);
+  return !!n && n > 3000;
+}
+function isCfeConcerne(client) {
+  const n = parseFloat(client.cfe?.nMoins1);
+  return !!n && n > 3000;
+}
+function isTvaAcompteConcerne(client) {
+  if (client.tvaRegime !== "CA12") return false;
+  const n = parseFloat(client.tvaAcompte?.nMoins1);
+  return !!n && n > 1000;
+}
+// IS : 4 acomptes de 25% de l'IS N-1
+function computeIsAcompte(nMoins1) {
+  return Math.round((parseFloat(nMoins1) || 0) * 0.25);
+}
+// CFE : acompte de 50% de la CFE N-1 en juin, solde en décembre
+function computeCfeAcompte(nMoins1) {
+  return Math.round((parseFloat(nMoins1) || 0) * 0.5);
+}
+// TVA (CA12) : 55% en juillet, 40% en décembre de la TVA N-1, régularisation sur la CA12 annuelle
+function computeTvaAcompteJuillet(nMoins1) {
+  return Math.round((parseFloat(nMoins1) || 0) * 0.55);
+}
+function computeTvaAcompteDecembre(nMoins1) {
+  return Math.round((parseFloat(nMoins1) || 0) * 0.40);
+}
+
 /* ============================================================
    MIGRATION — assure la compatibilité avec les anciennes données
    ============================================================ */
@@ -258,24 +293,41 @@ function computeFiscalEvents(clients) {
         });
       }
     }
-    // IS — acomptes (dates statutaires approximatives : 15 mars/juin/sept/déc)
-    if (c.is?.concerne) {
+    // IS — acomptes (dates statutaires approximatives : 15 mars/juin/sept/déc), calculés sur l'IS N-1
+    if (isIsConcerne(c)) {
+      const montant = computeIsAcompte(c.is.nMoins1);
       [["mars", 2, "mars"], ["juin", 5, "juin"], ["sept", 8, "septembre"], ["dec", 11, "décembre"]].forEach(([key, m, label]) => {
         if (!c.is[key]) {
           events.push({
             id: `${c.id}-is-${key}`, client: c, category: "IS",
-            label: `Acompte IS — ${label}`, date: new Date(year, m, 15), done: false, tone: "amber",
+            label: `Acompte IS — ${label} (${fmtEUR(montant)})`, date: new Date(year, m, 15), done: false, tone: "amber",
           });
         }
       });
     }
-    // CFE — 15 juin / 15 déc
-    if (c.cfe?.concerne) {
+    // CFE — 15 juin / 15 déc, calculés sur la CFE N-1
+    if (isCfeConcerne(c)) {
+      const montant = computeCfeAcompte(c.cfe.nMoins1);
       [["juin", 5, "juin (acompte)"], ["dec", 11, "décembre (solde)"]].forEach(([key, m, label]) => {
         if (!c.cfe[key]) {
           events.push({
             id: `${c.id}-cfe-${key}`, client: c, category: "CFE",
-            label: `CFE — ${label}`, date: new Date(year, m, 15), done: false, tone: "amber",
+            label: `CFE — ${label} (${fmtEUR(montant)})`, date: new Date(year, m, 15), done: false, tone: "amber",
+          });
+        }
+      });
+    }
+    // TVA — acomptes (régime CA12 uniquement), calculés sur la TVA N-1 : 55% en juillet, 40% en décembre
+    if (isTvaAcompteConcerne(c)) {
+      const ta = c.tvaAcompte || {};
+      [
+        ["juillet", 6, "juillet", computeTvaAcompteJuillet(ta.nMoins1)],
+        ["decembre", 11, "décembre", computeTvaAcompteDecembre(ta.nMoins1)],
+      ].forEach(([key, m, label, montant]) => {
+        if (!ta[key]) {
+          events.push({
+            id: `${c.id}-tvaacompte-${key}`, client: c, category: "TVA",
+            label: `Acompte TVA — ${label} (${fmtEUR(montant)})`, date: new Date(year, m, 15), done: false, tone: "amber",
           });
         }
       });
@@ -307,10 +359,10 @@ function computeFiscalEvents(clients) {
         events.push({
           id: `${c.id}-ago-${latestYear}`, client: c, category: "AGO",
           label: `Approbation des comptes ${latestYear}`, date: new Date(ay, am - 1, ad), done: false, tone: "amber",
-        });
-      }
+       });
+        }
+      });
     }
-  });
   return events;
 }
 
@@ -1976,22 +2028,61 @@ function ToggleBtn({ on, onClick, tone = "green" }) {
 }
 
 function AcomptesTab({ client, onUpdate }) {
-  const is = client.is || {}; const cfe = client.cfe || {};
+  const is = client.is || {}; const cfe = client.cfe || {}; const tvaAcompte = client.tvaAcompte || {};
   const toggleIs = (f) => onUpdate(client.id, { is: { ...is, [f]: !is[f] } });
   const toggleCfe = (f) => onUpdate(client.id, { cfe: { ...cfe, [f]: !cfe[f] } });
+  const toggleTva = (f) => onUpdate(client.id, { tvaAcompte: { ...tvaAcompte, [f]: !tvaAcompte[f] } });
+
+  const isMontant = computeIsAcompte(is.nMoins1);
+  const cfeMontant = computeCfeAcompte(cfe.nMoins1);
+  const tvaJuillet = computeTvaAcompteJuillet(tvaAcompte.nMoins1);
+  const tvaDecembre = computeTvaAcompteDecembre(tvaAcompte.nMoins1);
+
   return (
     <div>
       <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "4px 0 8px" }}>Impôt sur les sociétés</h4>
-      <FieldRow label="Concerné (IS N-1 > 3000€)"><ToggleBtn on={!!is.concerne} onClick={() => toggleIs("concerne")} /></FieldRow>
-      <FieldRow label="Acompte mars"><ToggleBtn on={!!is.mars} onClick={() => toggleIs("mars")} /></FieldRow>
-      <FieldRow label="Acompte juin"><ToggleBtn on={!!is.juin} onClick={() => toggleIs("juin")} /></FieldRow>
-      <FieldRow label="Acompte septembre"><ToggleBtn on={!!is.sept} onClick={() => toggleIs("sept")} /></FieldRow>
-      <FieldRow label="Acompte décembre"><ToggleBtn on={!!is.dec} onClick={() => toggleIs("dec")} /></FieldRow>
+      <FieldRow label="IS N-1">
+        <TextInput defaultValue={is.nMoins1} onCommit={(v) => onUpdate(client.id, { is: { ...is, nMoins1: v ? parseFloat(v) : "" } })} placeholder="ex. 8000" width={100} />
+      </FieldRow>
+      <FieldRow label="Concerné (IS N-1 > 3000€)"><Stamped tone={isIsConcerne(client) ? "amber" : "neutral"} small>{isIsConcerne(client) ? "Oui" : "Non"}</Stamped></FieldRow>
+      {isIsConcerne(client) && (
+        <div style={{ fontSize: 11, color: T.inkMuted, margin: "4px 0 8px" }}>Acompte calculé : {fmtEUR(isMontant)} par échéance (25% de l'IS N-1)</div>
+      )}
+      <FieldRow label={`Acompte mars${isIsConcerne(client) ? ` (${fmtEUR(isMontant)})` : ""}`}><ToggleBtn on={!!is.mars} onClick={() => toggleIs("mars")} /></FieldRow>
+      <FieldRow label={`Acompte juin${isIsConcerne(client) ? ` (${fmtEUR(isMontant)})` : ""}`}><ToggleBtn on={!!is.juin} onClick={() => toggleIs("juin")} /></FieldRow>
+      <FieldRow label={`Acompte septembre${isIsConcerne(client) ? ` (${fmtEUR(isMontant)})` : ""}`}><ToggleBtn on={!!is.sept} onClick={() => toggleIs("sept")} /></FieldRow>
+      <FieldRow label={`Acompte décembre${isIsConcerne(client) ? ` (${fmtEUR(isMontant)})` : ""}`}><ToggleBtn on={!!is.dec} onClick={() => toggleIs("dec")} /></FieldRow>
       <FieldRow label="Solde IS"><ToggleBtn on={!!is.solde} onClick={() => toggleIs("solde")} /></FieldRow>
+
       <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "20px 0 8px" }}>CFE</h4>
-      <FieldRow label="Concerné (CFE N-1 > 3000€)"><ToggleBtn on={!!cfe.concerne} onClick={() => toggleCfe("concerne")} /></FieldRow>
-      <FieldRow label="Acompte juin"><ToggleBtn on={!!cfe.juin} onClick={() => toggleCfe("juin")} /></FieldRow>
+      <FieldRow label="CFE N-1">
+        <TextInput defaultValue={cfe.nMoins1} onCommit={(v) => onUpdate(client.id, { cfe: { ...cfe, nMoins1: v ? parseFloat(v) : "" } })} placeholder="ex. 4000" width={100} />
+      </FieldRow>
+      <FieldRow label="Concerné (CFE N-1 > 3000€)"><Stamped tone={isCfeConcerne(client) ? "amber" : "neutral"} small>{isCfeConcerne(client) ? "Oui" : "Non"}</Stamped></FieldRow>
+      {isCfeConcerne(client) && (
+        <div style={{ fontSize: 11, color: T.inkMuted, margin: "4px 0 8px" }}>Acompte calculé : {fmtEUR(cfeMontant)} en juin (50% de la CFE N-1), solde en décembre</div>
+      )}
+      <FieldRow label={`Acompte juin${isCfeConcerne(client) ? ` (${fmtEUR(cfeMontant)})` : ""}`}><ToggleBtn on={!!cfe.juin} onClick={() => toggleCfe("juin")} /></FieldRow>
       <FieldRow label="Solde décembre"><ToggleBtn on={!!cfe.dec} onClick={() => toggleCfe("dec")} /></FieldRow>
+
+      <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "20px 0 8px" }}>Acompte TVA (régime CA12)</h4>
+      {client.tvaRegime !== "CA12" ? (
+        <div style={{ fontSize: 11.5, color: T.inkMuted, fontStyle: "italic" }}>Applicable uniquement aux dossiers en régime CA12.</div>
+      ) : (
+        <>
+          <FieldRow label="TVA N-1">
+            <TextInput defaultValue={tvaAcompte.nMoins1} onCommit={(v) => onUpdate(client.id, { tvaAcompte: { ...tvaAcompte, nMoins1: v ? parseFloat(v) : "" } })} placeholder="ex. 3000" width={100} />
+          </FieldRow>
+          <FieldRow label="Concerné (TVA N-1 > 1000€)"><Stamped tone={isTvaAcompteConcerne(client) ? "amber" : "neutral"} small>{isTvaAcompteConcerne(client) ? "Oui" : "Non"}</Stamped></FieldRow>
+          {isTvaAcompteConcerne(client) && (
+            <div style={{ fontSize: 11, color: T.inkMuted, margin: "4px 0 8px" }}>
+              Acomptes calculés : {fmtEUR(tvaJuillet)} en juillet (55%) et {fmtEUR(tvaDecembre)} en décembre (40%) de la TVA N-1 ; régularisation sur la déclaration CA12 annuelle.
+            </div>
+          )}
+          <FieldRow label={`Acompte juillet${isTvaAcompteConcerne(client) ? ` (${fmtEUR(tvaJuillet)})` : ""}`}><ToggleBtn on={!!tvaAcompte.juillet} onClick={() => toggleTva("juillet")} /></FieldRow>
+          <FieldRow label={`Acompte décembre${isTvaAcompteConcerne(client) ? ` (${fmtEUR(tvaDecembre)})` : ""}`}><ToggleBtn on={!!tvaAcompte.decembre} onClick={() => toggleTva("decembre")} /></FieldRow>
+        </>
+      )}
     </div>
   );
 }
@@ -2117,35 +2208,47 @@ function BilanTable({ clients, onUpdate }) {
    ============================================================ */
 function AcomptesView({ clients, search, roleFilter, setRoleFilter, me, onUpdate }) {
   const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
-  const isConcerned = filtered.filter((c) => c.is?.concerne);
-  const cfeConcerned = filtered.filter((c) => c.cfe?.concerne);
+  const isConcerned = filtered.filter(isIsConcerne);
+  const cfeConcerned = filtered.filter(isCfeConcerne);
+  const tvaConcerned = filtered.filter(isTvaAcompteConcerne);
   return (
     <div>
-      <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Acomptes IS &amp; CFE</h1></Reveal>
-      <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18 }}>Dossiers dont l'impôt N-1 dépasse 3 000 €.</p>
+      <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Impôts &amp; cotisations</h1></Reveal>
+      <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18 }}>
+        Acomptes calculés automatiquement à partir de l'IS, la CFE et la TVA N-1 renseignés sur chaque dossier
+        (seuils : 3 000 € pour IS/CFE, 1 000 € pour la TVA en CA12).
+      </p>
       <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} />
       <Panel title={`Acomptes IS (${isConcerned.length} dossiers concernés)`}>
-        {isConcerned.length === 0 ? <EmptyNote text="Aucun dossier marqué concerné pour l'instant." /> : isConcerned.map((c) => (
-          <AcompteRow key={c.id} client={c} fields={[["mars", "Mars"], ["juin", "Juin"], ["sept", "Sept"], ["dec", "Déc"], ["solde", "Solde"]]} field="is" onUpdate={onUpdate} />
+        {isConcerned.length === 0 ? <EmptyNote text="Aucun dossier concerné pour l'instant (renseignez l'IS N-1 dans la fiche du dossier)." /> : isConcerned.map((c) => (
+          <AcompteRow key={c.id} client={c} fields={[["mars", "Mars"], ["juin", "Juin"], ["sept", "Sept"], ["dec", "Déc"], ["solde", "Solde"]]} field="is" montant={computeIsAcompte(c.is?.nMoins1)} onUpdate={onUpdate} />
         ))}
       </Panel>
       <div style={{ height: 16 }} />
       <Panel title={`Acomptes CFE (${cfeConcerned.length} dossiers concernés)`}>
-        {cfeConcerned.length === 0 ? <EmptyNote text="Aucun dossier marqué concerné pour l'instant." /> : cfeConcerned.map((c) => (
-          <AcompteRow key={c.id} client={c} fields={[["juin", "Juin"], ["dec", "Déc (solde)"]]} field="cfe" onUpdate={onUpdate} />
+        {cfeConcerned.length === 0 ? <EmptyNote text="Aucun dossier concerné pour l'instant (renseignez la CFE N-1 dans la fiche du dossier)." /> : cfeConcerned.map((c) => (
+          <AcompteRow key={c.id} client={c} fields={[["juin", "Juin"], ["dec", "Déc (solde)"]]} field="cfe" montant={computeCfeAcompte(c.cfe?.nMoins1)} onUpdate={onUpdate} />
+        ))}
+      </Panel>
+      <div style={{ height: 16 }} />
+      <Panel title={`Acomptes TVA — CA12 (${tvaConcerned.length} dossiers concernés)`}>
+        {tvaConcerned.length === 0 ? <EmptyNote text="Aucun dossier concerné pour l'instant (renseignez la TVA N-1 dans la fiche des dossiers en régime CA12)." /> : tvaConcerned.map((c) => (
+          <AcompteRow key={c.id} client={c} fields={[["juillet", "Juillet (55%)"], ["decembre", "Déc (40%)"]]} field="tvaAcompte"
+            montants={[computeTvaAcompteJuillet(c.tvaAcompte?.nMoins1), computeTvaAcompteDecembre(c.tvaAcompte?.nMoins1)]} onUpdate={onUpdate} />
         ))}
       </Panel>
     </div>
   );
 }
-function AcompteRow({ client, fields, field, onUpdate }) {
+function AcompteRow({ client, fields, field, montant, montants, onUpdate }) {
   const obj = client[field] || {};
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 4px", borderBottom: `1px solid ${T.line}`, flexWrap: "wrap" }}>
       <div style={{ flex: 1, fontWeight: 600, fontSize: 12.5, minWidth: 140 }}>{client.nom}</div>
-      {fields.map(([k, label]) => (
+      {fields.map(([k, label], i) => (
         <label key={k} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: T.inkMuted }}>
-          <input type="checkbox" checked={!!obj[k]} onChange={() => onUpdate(client.id, { [field]: { ...obj, [k]: !obj[k] } })} /> {label}
+          <input type="checkbox" checked={!!obj[k]} onChange={() => onUpdate(client.id, { [field]: { ...obj, [k]: !obj[k] } })} />
+          {label} {montants ? `(${fmtEUR(montants[i])})` : montant != null ? `(${fmtEUR(montant)})` : ""}
         </label>
       ))}
     </div>
@@ -2283,11 +2386,29 @@ function RegimeChangeView({ clients, me, search, onUpdate }) {
     setMotifAutre("");
   };
 
-  const allHistory = useMemo(() => {
+ const allHistory = useMemo(() => {
     const rows = [];
-    clients.forEach((c) => (c.regimeHistory || []).forEach((h) => rows.push({ ...h, client: c.nom })));
+    clients.forEach((c) => (c.regimeHistory || []).forEach((h, idx) => rows.push({ ...h, client: c.nom, clientId: c.id, idx })));
     return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
   }, [clients]);
+
+  const deleteHistoryEntry = (clientId, idx) => {
+    const target = clients.find((c) => c.id === clientId);
+    if (!target) return;
+    const history = target.regimeHistory || [];
+    const entry = history[idx];
+    if (!entry) return;
+    if (!window.confirm(`Supprimer ce changement de régime pour ${target.nom} ?`)) return;
+    const newHistory = history.filter((_, i) => i !== idx);
+    const patch = { regimeHistory: newHistory };
+    // Si c'est le dernier changement enregistré pour ce dossier et qu'il correspond
+    // au régime actuellement affiché, on revient au régime précédent.
+    const isLatestForClient = idx === history.length - 1;
+    if (isLatestForClient && target.tvaRegime === entry.nouveau) {
+      patch.tvaRegime = entry.ancien && entry.ancien !== "—" ? entry.ancien : "";
+    }
+    onUpdate(clientId, patch);
+  };
 
   return (
     <div>
@@ -2327,17 +2448,21 @@ function RegimeChangeView({ clients, me, search, onUpdate }) {
       <Panel title={`Historique des changements (${allHistory.length})`} right={<History size={16} color={T.inkMuted} />}>
         {allHistory.length === 0 ? <EmptyNote text="Aucun changement de régime enregistré pour l'instant." /> : (
           <div>
-            <div style={{ display: "grid", gridTemplateColumns: "1.6fr 0.9fr 0.9fr 1.6fr 0.9fr 0.9fr", padding: "6px 4px", fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.05em", color: T.inkMuted, fontWeight: 600, borderBottom: `1px solid ${T.line}` }}>
-              <div>Dossier</div><div>Ancien</div><div>Nouveau</div><div>Motif</div><div>Date</div><div>Par</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1.6fr 0.9fr 0.9fr 1.6fr 0.9fr 0.9fr 34px", padding: "6px 4px", fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.05em", color: T.inkMuted, fontWeight: 600, borderBottom: `1px solid ${T.line}` }}>
+              <div>Dossier</div><div>Ancien</div><div>Nouveau</div><div>Motif</div><div>Date</div><div>Par</div><div />
             </div>
             {allHistory.map((h, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.6fr 0.9fr 0.9fr 1.6fr 0.9fr 0.9fr", padding: "9px 4px", fontSize: 12.5, borderBottom: `1px solid ${T.line}`, alignItems: "center" }}>
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.6fr 0.9fr 0.9fr 1.6fr 0.9fr 0.9fr 34px", padding: "9px 4px", fontSize: 12.5, borderBottom: `1px solid ${T.line}`, alignItems: "center" }}>
                 <div style={{ fontWeight: 600 }}>{h.client}</div>
                 <div style={{ fontFamily: T.mono, color: T.inkMuted }}>{h.ancien}</div>
                 <div style={{ fontFamily: T.mono, color: T.green, fontWeight: 600 }}>{h.nouveau}</div>
                 <div style={{ color: T.inkSoft }}>{h.motif}</div>
                 <div style={{ fontFamily: T.mono, fontSize: 11.5, color: T.inkMuted }}>{fmtFR(h.date)}</div>
                 <div style={{ fontSize: 12 }}>{h.par}</div>
+                <button onClick={() => deleteHistoryEntry(h.clientId, h.idx)} title="Supprimer cette entrée (erreur de saisie)"
+                  style={{ background: "none", border: "none", cursor: "pointer", color: T.inkMuted, padding: 4 }}>
+                  <Trash2 size={13} />
+                </button>
               </div>
             ))}
           </div>
