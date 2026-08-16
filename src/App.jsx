@@ -47,6 +47,105 @@ const DEFAULT_TEAM = ["Cheikh", "Soli", "Emilie", "Jacques"].map((nom, i) => ({
 const MOIS_ORDER = ["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sept","Oct","Nov","Déc"];
 const MOIS_FULL = { Jan:"Janvier",Fév:"Février",Mar:"Mars",Avr:"Avril",Mai:"Mai",Juin:"Juin",Juil:"Juillet",Août:"Août",Sept:"Septembre",Oct:"Octobre",Nov:"Novembre",Déc:"Décembre" };
 const REGIMES_TVA = ["CA3", "CA12", "FRANCHISE"];
+/* ============================================================
+   SECTEURS D'ACTIVITÉ — classification auto depuis le champ "Activité"
+   ============================================================ */
+const SECTEURS_ACTIVITE = [
+  { id: "restauration", label: "Restauration / CHR", color: "#DC2626" },
+  { id: "batiment", label: "Bâtiment / BTP", color: "#D97706" },
+  { id: "beaute", label: "Beauté / Coiffure", color: "#DB2777" },
+  { id: "sante", label: "Santé", color: "#16A34A" },
+  { id: "commerce_detail", label: "Commerce de détail", color: "#2563EB" },
+  { id: "commerce_gros", label: "Commerce de gros", color: "#0EA5E9" },
+  { id: "informatique", label: "Informatique", color: "#4F46E5" },
+  { id: "securite_nettoyage", label: "Sécurité / Nettoyage", color: "#64748B" },
+  { id: "transport", label: "Transport", color: "#EA580C" },
+  { id: "immobilier", label: "Immobilier / Holding / Patrimoine", color: "#7C3AED" },
+  { id: "conseil", label: "Conseil", color: "#0891B2" },
+  { id: "automobile", label: "Automobile", color: "#B45309" },
+  { id: "autres", label: "Autres", color: "#94A3B8" },
+];
+
+// Mots-clés (issus des libellés officiels NAF/APE) associés à chaque secteur.
+// Pour ajouter une activité : repérez le secteur concerné et complétez le tableau "keywords".
+const ACTIVITE_KEYWORDS = [
+  { secteurId: "restauration", keywords: [
+    "restauration rapide", "restauration traditionnelle", "restaurant",
+    "boulangerie", "patisserie", "traiteur", "debit de boissons", "cafe restaurant", "snack",
+  ]},
+  { secteurId: "batiment", keywords: [
+    "maconnerie", "peinture", "vitrerie", "revetement des sols", "revetement des murs",
+    "plomberie", "installation eau", "installation gaz", "installation electrique",
+    "travaux de finition", "construction de maisons individuelles", "construction maisons",
+    "gros oeuvre", "second oeuvre", "menuiserie", "couverture", "charpente", "terrassement", "btp",
+  ]},
+  { secteurId: "beaute", keywords: [
+    "soins de beaute", "coiffure", "esthetique", "institut de beaute", "onglerie", "barbier",
+  ]},
+  { secteurId: "sante", keywords: [
+    "medecin", "generaliste", "specialiste", "infirmier", "infirmiere", "sage-femme", "sage femme",
+    "dentiste", "kinesitherapeute", "pharmacie", "professions paramedicales",
+  ]},
+  { secteurId: "commerce_detail", keywords: [
+    "commerce de detail", "alimentation generale", "boucherie", "charcuterie",
+    "commerce de detail de viandes", "telecommunication", "marches", "magasin non specialise",
+    "cordonnerie", "supermarche", "epicerie",
+  ]},
+  { secteurId: "commerce_gros", keywords: [
+    "commerce de gros", "grossiste", "cafe the epices", "vaisselle", "verrerie",
+    "produits alimentaires non specialises en gros",
+  ]},
+  { secteurId: "informatique", keywords: [
+    "programmation informatique", "conseil en systemes informatiques", "activites informatiques",
+    "reparation d ordinateurs", "reparation ordinateurs", "edition de logiciels",
+    "developpement informatique",
+  ]},
+  { secteurId: "securite_nettoyage", keywords: [
+    "securite privee", "activites de securite privee", "nettoyage courant des batiments",
+    "nettoyage industriel", "desinfection", "deratisation", "gardiennage", "surveillance",
+  ]},
+  { secteurId: "transport", keywords: [
+    "transport routier de fret", "fret de proximite", "transport urbain", "transport de voyageurs",
+    "transport routier", "messagerie", "demenagement",
+  ]},
+  { secteurId: "immobilier", keywords: [
+    "societes holding", "holding", "gestion de fonds", "sieges sociaux",
+    "location de terrains", "location immobiliere", "agence immobiliere",
+    "administration d immeubles", "supports juridiques de gestion de patrimoine mobilier",
+    "fonds de placement",
+  ]},
+  { secteurId: "conseil", keywords: [
+    "relations publiques", "communication", "conseil pour les affaires", "conseil de gestion",
+    "conseil en management", "ingenierie", "etudes techniques",
+  ]},
+  { secteurId: "automobile", keywords: [
+    "entretien et reparation de vehicules automobiles legers", "entretien reparation vehicules",
+    "garage automobile", "carrosserie", "reparation automobile",
+  ]},
+  { secteurId: "autres", keywords: [
+    "blanchisserie", "teinturerie", "formation continue", "formation professionnelle",
+    "fabrication de produits alimentaires", "reproduction de plantes", "pepiniere", "horticulture",
+  ]},
+];
+
+function normalizeText(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function classifyActivite(activiteText) {
+  const norm = normalizeText(activiteText);
+  if (!norm) return "";
+  for (const entry of ACTIVITE_KEYWORDS) {
+    for (const kw of entry.keywords) {
+      if (norm.includes(normalizeText(kw))) return entry.secteurId;
+    }
+  }
+  return "autres";
+}
 const QUARTER_END_MONTHS = ["Mar", "Juin", "Sept", "Déc"]; // fins de trimestre civil, pour la périodicité CA3 trimestrielle
 const TVA_PERIODICITES = ["mensuelle", "trimestrielle"];
 const TVA_PERIODICITE_LABELS = { mensuelle: "Mensuelle", trimestrielle: "Trimestrielle" };
@@ -93,6 +192,8 @@ function migrateClients(list) {
     if (!next.formeJuridique) next.formeJuridique = "";
     if (!next.capital) next.capital = "";
     if (!next.activite) next.activite = "";
+    if (next.secteurManuel == null) next.secteurManuel = false;
+    if (!next.secteur) next.secteur = classifyActivite(next.activite);
     if (!next.corporate) {
       next.corporate = {
         kyc: { lab: false, mandat: false, choixPA: "", beneficiaireEffectif: false, beneficiaireNom: "" },
@@ -130,6 +231,7 @@ const EXCEL_COLUMNS = [
   { key: "formeJuridique", label: "Forme juridique" },
   { key: "capital", label: "Capital" },
   { key: "activite", label: "Activité" },
+  { key: "secteur", label: "Secteur (auto)" },
   { key: "dateCloture", label: "Date clôture (AAAA-MM-JJ)" },
   { key: "tvaRegime", label: "Régime TVA" },
   { key: "tvaExig", label: "Jour exigibilité TVA" },
@@ -145,6 +247,7 @@ const EXCEL_IMPORT_ALIASES = {
   formeJuridique: ["forme juridique", "formejuridique"],
   capital: ["capital", "capital social"],
   activite: ["activité", "activite"],
+  secteur: ["secteur", "secteur d'activite", "secteur activite"],
   dateCloture: ["date clôture (aaaa-mm-jj)", "date cloture", "date de clôture", "date clôture", "datecloture"],
   tvaRegime: ["régime tva", "regime tva", "tvaregime"],
   tvaExig: ["jour exigibilité tva", "jour exigibilite tva", "tvaexig", "exigibilité"],
@@ -2025,7 +2128,35 @@ function InfosTab({ client, team, onUpdate }) {
       <FieldRow label="Logiciel"><SelectPill value={client.logiciel} options={["MYUNISOFT", "QUADRA"]} onChange={(v) => onUpdate(client.id, { logiciel: v })} /></FieldRow>
       <FieldRow label="Forme juridique"><SelectPill value={client.formeJuridique} options={["SARL", "EURL", "SAS", "SASU", "SCI", "SA", "SNC", "EI", "Association"]} onChange={(v) => onUpdate(client.id, { formeJuridique: v })} /></FieldRow>
       <FieldRow label="Capital social"><TextInput defaultValue={client.capital} onCommit={(v) => onUpdate(client.id, { capital: v })} placeholder="ex. 5 000 €" width={140} /></FieldRow>
-      <FieldRow label="Activité"><TextInput defaultValue={client.activite} onCommit={(v) => onUpdate(client.id, { activite: v })} placeholder="ex. Restauration" width={200} align="left" /></FieldRow>
+      <FieldRow label="Activité">
+        <TextInput
+          defaultValue={client.activite}
+          onCommit={(v) => onUpdate(client.id, {
+            activite: v,
+            secteur: client.secteurManuel ? client.secteur : classifyActivite(v),
+          })}
+          placeholder="ex. Restauration rapide"
+          width={200}
+          align="left"
+        />
+      </FieldRow>
+      <FieldRow label="Secteur">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+            background: (SECTEURS_ACTIVITE.find((s) => s.id === client.secteur)?.color || T.inkMuted) + "22",
+            color: SECTEURS_ACTIVITE.find((s) => s.id === client.secteur)?.color || T.inkMuted,
+          }}>
+            {SECTEURS_ACTIVITE.find((s) => s.id === client.secteur)?.label || "Non classé"}
+          </span>
+          <SelectPill
+            value={client.secteur}
+            options={SECTEURS_ACTIVITE.map((s) => s.id)}
+            labels={Object.fromEntries(SECTEURS_ACTIVITE.map((s) => [s.id, s.label]))}
+            onChange={(v) => onUpdate(client.id, { secteur: v, secteurManuel: true })}
+          />
+        </div>
+      </FieldRow>
       <FieldRow label="Date de clôture d'exercice"><input type="date" defaultValue={client.dateCloture || ""} onChange={(e) => onUpdate(client.id, { dateCloture: e.target.value })} style={{ fontFamily: T.mono, fontSize: 12.5, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card }} /></FieldRow>
       <div style={{ height: 6 }} />
       <FieldRow label="Collaborateur"><SelectPill value={client.collab} options={teamNames} onChange={(v) => onUpdate(client.id, { collab: v })} /></FieldRow>
