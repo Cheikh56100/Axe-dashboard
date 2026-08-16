@@ -2842,12 +2842,7 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, regimeFilter, set
               const isCa3Trim = c.tvaRegime === "CA3" && c.tvaPeriodicite === "trimestrielle";
               return (
               <tr key={c.id} className="hoverRow">
-                    <td style={{ ...tdStyle, fontWeight: 600, whiteSpace: "nowrap" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        {c.nom}
-                        <ConcerneToggle on={!!c.social?.concerne} onChange={(v) => patchSocial(c, { concerne: v })} small />
-                      </div>
-                    </td>
+                <td className={onOpenClient ? "clickable" : undefined} onClick={() => onOpenClient && onOpenClient(c.id)}
                   style={{ ...tdStyle, fontWeight: 600, whiteSpace: "nowrap", color: onOpenClient ? T.navy : T.ink }}>{c.nom}</td>
                 <td style={{ ...tdStyle, fontFamily: T.mono, color: T.inkMuted }}>
                   {c.tvaRegime}{isCa3Trim && <span style={{ marginLeft: 4, fontSize: 9.5, color: T.navy, background: T.navySoft, padding: "1px 5px", borderRadius: 999 }}>Trim.</span>}
