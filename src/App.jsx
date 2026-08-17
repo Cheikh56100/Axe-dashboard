@@ -3984,41 +3984,48 @@ function CadreSocialView({ clients, search, setSearch, roleFilter, setRoleFilter
         {concernes.length === 0 ? <EmptyNote text="Aucun dossier marqué « concerné » pour l'instant." /> : (
           <div className="scrollbar" style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11.5 }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Dossier</th><th style={thStyle}>Effectif</th><th style={thStyle}>Cabinet de paie</th>
-                  // dans <thead>, après "Cabinet de paie" //
-<th style={thStyle}>Convention collective</th><th style={thStyle}>Régime dirigeant</th><th style={thStyle}>Seuil</th>
-                  {MOIS_ORDER.map((m) => <th key={m} style={{ ...thStyle, textAlign: "center" }}>{m}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {concernes.map((c) => (
-                  <tr key={c.id} className="hoverRow">
-                    <td style={{ ...tdStyle, fontWeight: 600, whiteSpace: "nowrap" }}>{c.nom}</td>
-                    <td style={tdStyle}>
-                      <input defaultValue={c.social?.effectif || ""} placeholder="—" onBlur={(e) => patchSocial(c, { effectif: e.target.value })}
-                        style={{ width: 44, textAlign: "center", fontFamily: T.mono, fontSize: 11.5, padding: "3px 2px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }} />
-                    </td>
-                    <td style={tdStyle}>
-                      <input defaultValue={c.social?.cabinetPaie || ""} placeholder="ex. Silae, ADP…" onBlur={(e) => patchSocial(c, { cabinetPaie: e.target.value })}
-                        style={{ width: 120, fontSize: 11.5, padding: "3px 6px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }} />
-                      // dans <tbody>, après la cellule "cabinetPaie", avant les cellules mois
-<td style={tdStyle}>
-  <input defaultValue={c.social?.conventionCollective || ""} placeholder="ex. Syntec" onBlur={(e) => patchSocial(c, { conventionCollective: e.target.value })}
-    style={{ width: 100, fontSize: 11.5, padding: "3px 6px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }} />
-</td>
-<td style={tdStyle}>
-  <select defaultValue={c.social?.regimeDirigeant || ""} onChange={(e) => patchSocial(c, { regimeDirigeant: e.target.value })}
-    style={{ fontFamily: T.mono, fontSize: 11, padding: "3px 4px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }}>
-    <option value="">—</option><option value="assimile_salarie">Assimilé salarié</option><option value="tns">TNS</option>
-  </select>
-</td>
-<td style={tdStyle}>
-  {(() => { const s = seuilEffectifAlert(c.social?.effectif); return s ? <Stamped tone={s.tone} small>{s.label}</Stamped> : <span style={{ color: T.inkMuted }}>—</span>; })()}
-</td>
-                    </td>
-                    {MOIS_ORDER.map((m) => (
+            <thead>
+  <tr>
+    <th style={thStyle}>Dossier</th><th style={thStyle}>Effectif</th><th style={thStyle}>Cabinet de paie</th>
+    <th style={thStyle}>Convention collective</th><th style={thStyle}>Régime dirigeant</th><th style={thStyle}>Seuil</th>
+    {MOIS_ORDER.map((m) => <th key={m} style={{ ...thStyle, textAlign: "center" }}>{m}</th>)}
+  </tr>
+</thead>
+<tbody>
+  {concernes.map((c) => (
+    <tr key={c.id} className="hoverRow">
+      <td style={{ ...tdStyle, fontWeight: 600, whiteSpace: "nowrap" }}>{c.nom}</td>
+      <td style={tdStyle}>
+        <input defaultValue={c.social?.effectif || ""} placeholder="—" onBlur={(e) => patchSocial(c, { effectif: e.target.value })}
+          style={{ width: 44, textAlign: "center", fontFamily: T.mono, fontSize: 11.5, padding: "3px 2px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }} />
+      </td>
+      <td style={tdStyle}>
+        <input defaultValue={c.social?.cabinetPaie || ""} placeholder="ex. Silae, ADP…" onBlur={(e) => patchSocial(c, { cabinetPaie: e.target.value })}
+          style={{ width: 120, fontSize: 11.5, padding: "3px 6px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }} />
+      </td>
+      <td style={tdStyle}>
+        <input defaultValue={c.social?.conventionCollective || ""} placeholder="ex. Syntec" onBlur={(e) => patchSocial(c, { conventionCollective: e.target.value })}
+          style={{ width: 100, fontSize: 11.5, padding: "3px 6px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }} />
+      </td>
+      <td style={tdStyle}>
+        <select defaultValue={c.social?.regimeDirigeant || ""} onChange={(e) => patchSocial(c, { regimeDirigeant: e.target.value })}
+          style={{ fontFamily: T.mono, fontSize: 11, padding: "3px 4px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }}>
+          <option value="">—</option><option value="assimile_salarie">Assimilé salarié</option><option value="tns">TNS</option>
+        </select>
+      </td>
+      <td style={tdStyle}>
+        {(() => { const s = seuilEffectifAlert(c.social?.effectif); return s ? <Stamped tone={s.tone} small>{s.label}</Stamped> : <span style={{ color: T.inkMuted }}>—</span>; })()}
+      </td>
+      {MOIS_ORDER.map((m) => (
+        <td key={m} style={{ ...tdStyle, textAlign: "center" }}>
+          <button className="clickable" onClick={() => cycleMonth(c, m)} style={{ background: "none", border: "none", padding: 0 }}>
+            <Stamped tone={odTone(c.social?.odMois?.[m])} small>{odLabel(c.social?.odMois?.[m])}</Stamped>
+          </button>
+        </td>
+      ))}
+    </tr>
+  ))}
+</tbody>
                       <td key={m} style={{ ...tdStyle, textAlign: "center" }}>
                         <button className="clickable" onClick={() => cycleMonth(c, m)} style={{ background: "none", border: "none", padding: 0 }}>
                           <Stamped tone={odTone(c.social?.odMois?.[m])} small>{odLabel(c.social?.odMois?.[m])}</Stamped>
