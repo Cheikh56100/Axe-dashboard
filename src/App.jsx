@@ -423,6 +423,7 @@ function migrateClients(list) {
     if (!next.formeJuridiqueHistory) next.formeJuridiqueHistory = {};
     if (!next.lienSharepoint) next.lienSharepoint = "";
     if (!next.revision) next.revision = {};
+    if (!next.missionsExceptionnelles) next.missionsExceptionnelles = [];
     if (!next.corporate) {
       next.corporate = {
         kyc: { lab: false, mandat: false, choixPA: "", beneficiaireEffectif: false, beneficiaireNom: "" },
@@ -442,11 +443,103 @@ function migrateClients(list) {
     if (next.tvaExig == null) next.tvaExig = "";
     if (!next.honoraires) next.honoraires = { montant: "", historique: [] };
     if (!next.social) next.social = { concerne: false, effectif: "", cabinetPaie: "", periodicite: "Mensuelle", odMois: {} };
+    if (!next.social) next.social = { concerne: false, effectif: "", cabinetPaie: "", periodicite: "Mensuelle", odMois: {} };
+// nouveaux champs, à ajouter même si next.social existe déjà :
+if (next.social.gestionnaireNom == null) next.social.gestionnaireNom = "";
+if (next.social.gestionnaireEmail == null) next.social.gestionnaireEmail = "";
+if (next.social.gestionnaireTel == null) next.social.gestionnaireTel = "";
+if (next.social.conventionCollective == null) next.social.conventionCollective = "";
+if (next.social.regimeDirigeant == null) next.social.regimeDirigeant = "";
     if (!next.notesCollab) next.notesCollab = [];
+    if (!next.resiliation) {
+  next.resiliation = {
+    active: false, date: "", initiateur: "", motif: "", motifAutre: "",
+    lettreEnvoyee: false, lettreDate: "", preavisRespecte: false,
+    piecesRestituees: false, piecesRestitueesDate: "",
+    confrereRepreneur: "", lettreConfraterniteEnvoyee: false, lettreConfraterniteRecue: false,
+    honorairesSituation: "soldes", derniereCloture: "",
+    historique: [],
+  };
+}
     return next;
   });
 }
 
+const MISSION_EXCEP_TYPES = ["Attestation", "Prévisionnel / situation intermédiaire", "Évaluation d'entreprise", "Dossier bancaire / levée de fonds", "Cession-transmission", "Formalité ponctuelle", "Expertise", "Autre"];
+const MISSION_EXCEP_STATUTS = ["a_faire", "en_cours", "livree"];
+const MISSION_EXCEP_STATUT_LABELS = { a_faire: "À faire", en_cours: "En cours", livree: "Livrée" };
+const MISSION_EXCEP_STATUT_TONE = { a_faire: "neutral", en_cours: "amber", livree: "green" };
+
+function MissionsExceptionnellesTab({ client, team, onUpdate }) {
+  const missions = client.missionsExceptionnelles || [];
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ type: MISSION_EXCEP_TYPES[0], dateDemande: todayISO(), dateLivraisonPrevue: "", statut: "a_faire", collaborateur: "", honoraires: "", lettreSignee: false, notes: "" });
+
+  const addMission = () => {
+    const entry = { id: `me-${Date.now()}`, ...form };
+    onUpdate(client.id, { missionsExceptionnelles: [...missions, entry] });
+    setForm({ type: MISSION_EXCEP_TYPES[0], dateDemande: todayISO(), dateLivraisonPrevue: "", statut: "a_faire", collaborateur: "", honoraires: "", lettreSignee: false, notes: "" });
+    setShowForm(false);
+  };
+  const patchMission = (id, patch) => onUpdate(client.id, { missionsExceptionnelles: missions.map((m) => (m.id === id ? { ...m, ...patch } : m)) });
+  const removeMission = (id) => onUpdate(client.id, { missionsExceptionnelles: missions.filter((m) => m.id !== id) });
+
+  const sorted = [...missions].sort((a, b) => (a.dateDemande < b.dateDemande ? 1 : -1));
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: 0 }}>Missions exceptionnelles ({missions.length})</h4>
+        <button onClick={() => setShowForm((s) => !s)} style={{ display: "flex", alignItems: "center", gap: 6, background: T.navy, color: "#fff", border: "none", borderRadius: 9, padding: "6px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>
+          <Plus size={13} /> Nouvelle mission
+        </button>
+      </div>
+
+      {showForm && (
+        <div style={{ background: T.paper, borderRadius: 10, padding: 14, marginBottom: 16 }}>
+          <FieldRow label="Type de mission"><SelectPill value={form.type} options={MISSION_EXCEP_TYPES} allowEmpty={false} onChange={(v) => setForm({ ...form, type: v })} /></FieldRow>
+          <FieldRow label="Date de la demande"><input type="date" value={form.dateDemande} onChange={(e) => setForm({ ...form, dateDemande: e.target.value })} style={{ fontFamily: T.mono, fontSize: 12, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card }} /></FieldRow>
+          <FieldRow label="Livraison prévue"><input type="date" value={form.dateLivraisonPrevue} onChange={(e) => setForm({ ...form, dateLivraisonPrevue: e.target.value })} style={{ fontFamily: T.mono, fontSize: 12, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card }} /></FieldRow>
+          <FieldRow label="Collaborateur en charge"><SelectPill value={form.collaborateur} options={team.map((t) => t.nom)} onChange={(v) => setForm({ ...form, collaborateur: v })} /></FieldRow>
+          <FieldRow label="Honoraires spécifiques"><TextInput defaultValue={form.honoraires} onCommit={(v) => setForm({ ...form, honoraires: v })} placeholder="ex. 800 € HT" width={160} /></FieldRow>
+          <FieldRow label="Lettre de mission spécifique signée"><ToggleBtn on={form.lettreSignee} onClick={() => setForm({ ...form, lettreSignee: !form.lettreSignee })} /></FieldRow>
+          <div style={{ padding: "10px 0" }}>
+            <div style={{ fontSize: 12, color: T.inkMuted, marginBottom: 6 }}>Notes / livrable</div>
+            <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2}
+              style={{ width: "100%", padding: 8, borderRadius: 8, border: `1px solid ${T.line}`, fontSize: 12, background: T.card, resize: "vertical" }} />
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+            <button onClick={() => setShowForm(false)} style={{ padding: "7px 12px", borderRadius: 9, border: `1px solid ${T.line}`, background: "none", cursor: "pointer", fontSize: 11.5 }}>Annuler</button>
+            <button onClick={addMission} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: T.navy, color: "#fff", cursor: "pointer", fontSize: 11.5, fontWeight: 700 }}>Créer</button>
+          </div>
+        </div>
+      )}
+
+      {sorted.length === 0 ? <EmptyNote text="Aucune mission exceptionnelle pour ce dossier." /> : sorted.map((m) => (
+        <div key={m.id} style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: "12px 14px", marginBottom: 10, background: T.card }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontWeight: 700, fontSize: 12.5 }}>{m.type}</span>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <select value={m.statut} onChange={(e) => patchMission(m.id, { statut: e.target.value })}
+                style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 700, padding: "3px 6px", borderRadius: 7, border: `1px solid ${T.line}`, background: T.card }}>
+                {MISSION_EXCEP_STATUTS.map((s) => <option key={s} value={s}>{MISSION_EXCEP_STATUT_LABELS[s]}</option>)}
+              </select>
+              <button onClick={() => removeMission(m.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.inkMuted }}><Trash2 size={13} /></button>
+            </div>
+          </div>
+          <div style={{ fontSize: 11.5, color: T.inkMuted, display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <span>Demande : {fmtFR(m.dateDemande)}</span>
+            {m.dateLivraisonPrevue && <span>Livraison prévue : {fmtFR(m.dateLivraisonPrevue)}</span>}
+            {m.collaborateur && <span>Collab. : {m.collaborateur}</span>}
+            {m.honoraires && <span>Honoraires : {m.honoraires}</span>}
+            <Stamped tone={m.lettreSignee ? "green" : "amber"} small>{m.lettreSignee ? "Lettre signée" : "Lettre à signer"}</Stamped>
+          </div>
+          {m.notes && <div style={{ fontSize: 12, color: T.inkSoft, marginTop: 8, whiteSpace: "pre-wrap" }}>{m.notes}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
 /* ============================================================
    IMPORT / EXPORT EXCEL — registre clients
    ============================================================ */
@@ -2057,6 +2150,15 @@ function isTvaLate(client) {
   if (!client.tvaRegime || client.tvaRegime === "FRANCHISE") return false;
   return effectiveTvaStatus(client, currentMonthKey()) === "RETARD";
 }
+function seuilEffectifAlert(effectif) {
+  const n = parseInt(effectif, 10);
+  if (!n) return null;
+  if (n >= 50) return { label: "≥ 50 salariés", tone: "red" };
+  if (n >= 45) return { label: "Approche 50", tone: "amber" };
+  if (n >= 11) return { label: "≥ 11 salariés", tone: "amber" };
+  if (n >= 9) return { label: "Approche 11", tone: "amber" };
+  return null;
+}
 function missionCompletion(client) {
   const m = client.mission; if (!m) return null;
   const vals = Object.values(m); if (!vals.length) return null;
@@ -2481,6 +2583,8 @@ function ClientEditorPage({ client, team, me, onUpdate, onClose, setView }) {
     { id: "bilan", label: "Bilan" }, { id: "acomptes", label: "Acomptes" }, { id: "age", label: "AGE / AGO" },
     { id: "formeJuridique", label: "Forme juridique" }, { id: "revision", label: "Révision" }, { id: "mission", label: "Intégration" },
     { id: "honoraires", label: "Honoraires" }, { id: "social", label: "Social" }, { id: "notes", label: "Notes" },
+    { id: "missionsExcep", label: "Missions except." }, { id: "resiliation", label: "Résiliation" },
+    { id: "social", label: "Social" }
   ];
   return (
     <div>
@@ -2546,10 +2650,39 @@ function ClientEditorPage({ client, team, me, onUpdate, onClose, setView }) {
         {tab === "acomptes" && <AcomptesTab client={draft} onUpdate={patchDraft} />}
         {tab === "age" && <AgeAgoEditor client={draft} onUpdate={patchDraft} />}
         {tab === "formeJuridique" && <FormeJuridiqueEditor client={draft} onUpdate={patchDraft} />}
+        {tab === "social" && <SocialTab client={draft} onUpdate={patchDraft} />}
 {tab === "revision" && <RevisionTab client={draft} onUpdate={patchDraft} setView={setView} />}
         {tab === "mission" && <MissionTab client={draft} onUpdate={patchDraft} />}
         {tab === "notes" && <NotesTab client={client} me={me} onUpdate={onUpdate} />}
+        {tab === "resiliation" && <ResiliationTab client={draft} me={me} onUpdate={patchDraft} />}
+        {tab === "missionsExcep" && <MissionsExceptionnellesTab client={draft} team={team} onUpdate={patchDraft} />}
       </div>
+    </div>
+  );
+}
+function SocialTab({ client, onUpdate }) {
+  const s = client.social || {};
+  const patch = (f) => onUpdate(client.id, { social: { ...s, ...f } });
+  const alert = seuilEffectifAlert(s.effectif);
+  return (
+    <div>
+      <FieldRow label="Concerné par le social">
+        <ConcerneToggle on={!!s.concerne} onChange={(v) => patch({ concerne: v })} />
+      </FieldRow>
+      <FieldRow label="Effectif">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <TextInput defaultValue={s.effectif} onCommit={(v) => patch({ effectif: v })} width={60} />
+          {alert && <Stamped tone={alert.tone} small>{alert.label}</Stamped>}
+        </div>
+      </FieldRow>
+      <FieldRow label="Cabinet de paie"><TextInput defaultValue={s.cabinetPaie} onCommit={(v) => patch({ cabinetPaie: v })} width={160} align="left" /></FieldRow>
+      <FieldRow label="Contact gestionnaire — nom"><TextInput defaultValue={s.gestionnaireNom} onCommit={(v) => patch({ gestionnaireNom: v })} width={160} align="left" /></FieldRow>
+      <FieldRow label="Contact gestionnaire — email"><TextInput defaultValue={s.gestionnaireEmail} onCommit={(v) => patch({ gestionnaireEmail: v })} width={180} align="left" /></FieldRow>
+      <FieldRow label="Contact gestionnaire — tél."><TextInput defaultValue={s.gestionnaireTel} onCommit={(v) => patch({ gestionnaireTel: v })} width={140} align="left" /></FieldRow>
+      <FieldRow label="Convention collective"><TextInput defaultValue={s.conventionCollective} onCommit={(v) => patch({ conventionCollective: v })} width={180} align="left" /></FieldRow>
+      <FieldRow label="Régime social du dirigeant">
+        <SelectPill value={s.regimeDirigeant} options={["assimile_salarie", "tns"]} labels={{ assimile_salarie: "Assimilé salarié", tns: "TNS" }} onChange={(v) => patch({ regimeDirigeant: v })} />
+      </FieldRow>
     </div>
   );
 }
@@ -2978,6 +3111,95 @@ function NotesTab({ client, me, onUpdate }) {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+const RESILIATION_MOTIFS = ["Impayés", "Cessation d'activité du client", "Désaccord", "Changement de cabinet", "Autre"];
+const RESILIATION_INITIATEURS = ["Cabinet", "Client"];
+
+function ResiliationTab({ client, me, onUpdate }) {
+  const r = client.resiliation || {};
+  const patch = (fields) => onUpdate(client.id, { resiliation: { ...r, ...fields } });
+
+  const activer = () => {
+    const entry = { date: r.date || todayISO(), initiateur: r.initiateur, motif: r.motif === "Autre" ? r.motifAutre : r.motif, par: me };
+    patch({ active: true, historique: [...(r.historique || []), entry] });
+    onUpdate(client.id, { statutDossier: "inactif" });
+  };
+  const annuler = () => {
+    patch({ active: false });
+    onUpdate(client.id, { statutDossier: "actif" });
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: 0 }}>Résiliation du dossier</h4>
+        <Stamped tone={r.active ? "red" : "green"} small>{r.active ? "Dossier résilié" : "Dossier actif"}</Stamped>
+      </div>
+
+      {r.active && (
+        <div style={{ fontSize: 11.5, color: T.red, background: T.redSoft, padding: "8px 12px", borderRadius: 9, marginBottom: 16 }}>
+          Ce dossier est marqué comme résilié — le statut a été basculé sur « Inactif ».
+          <button onClick={annuler} style={{ marginLeft: 10, background: "none", border: "none", color: T.navy, fontWeight: 700, cursor: "pointer", fontSize: 11.5 }}>Annuler la résiliation</button>
+        </div>
+      )}
+
+      <FieldRow label="Date de résiliation">
+        <input type="date" value={r.date || ""} onChange={(e) => patch({ date: e.target.value })}
+          style={{ fontFamily: T.mono, fontSize: 12, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card }} />
+      </FieldRow>
+      <FieldRow label="Initiateur"><SelectPill value={r.initiateur} options={RESILIATION_INITIATEURS} onChange={(v) => patch({ initiateur: v })} /></FieldRow>
+      <FieldRow label="Motif"><SelectPill value={r.motif} options={RESILIATION_MOTIFS} onChange={(v) => patch({ motif: v })} /></FieldRow>
+      {r.motif === "Autre" && <FieldRow label="Précisez"><TextInput defaultValue={r.motifAutre} onCommit={(v) => patch({ motifAutre: v })} width={200} align="left" /></FieldRow>}
+
+      <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "20px 0 8px" }}>Obligations légales & déontologiques</h4>
+      <FieldRow label="Lettre de résiliation envoyée">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <ToggleBtn on={!!r.lettreEnvoyee} onClick={() => patch({ lettreEnvoyee: !r.lettreEnvoyee, lettreDate: !r.lettreEnvoyee ? todayISO() : r.lettreDate })} />
+          {r.lettreEnvoyee && <input type="date" value={r.lettreDate || ""} onChange={(e) => patch({ lettreDate: e.target.value })}
+            style={{ fontFamily: T.mono, fontSize: 12, padding: "4px 7px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card }} />}
+        </div>
+      </FieldRow>
+      <FieldRow label="Préavis contractuel respecté"><ToggleBtn on={!!r.preavisRespecte} onClick={() => patch({ preavisRespecte: !r.preavisRespecte })} /></FieldRow>
+      <FieldRow label="Pièces comptables restituées au client">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <ToggleBtn on={!!r.piecesRestituees} onClick={() => patch({ piecesRestituees: !r.piecesRestituees, piecesRestitueesDate: !r.piecesRestituees ? todayISO() : r.piecesRestitueesDate })} tone="green" />
+          {r.piecesRestituees && <input type="date" value={r.piecesRestitueesDate || ""} onChange={(e) => patch({ piecesRestitueesDate: e.target.value })}
+            style={{ fontFamily: T.mono, fontSize: 12, padding: "4px 7px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card }} />}
+        </div>
+      </FieldRow>
+
+      <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "20px 0 8px" }}>Confraternité</h4>
+      <FieldRow label="Confrère repreneur"><TextInput defaultValue={r.confrereRepreneur} onCommit={(v) => patch({ confrereRepreneur: v })} placeholder="Nom du cabinet" width={200} align="left" /></FieldRow>
+      <FieldRow label="Lettre de confraternité envoyée"><ToggleBtn on={!!r.lettreConfraterniteEnvoyee} onClick={() => patch({ lettreConfraterniteEnvoyee: !r.lettreConfraterniteEnvoyee })} /></FieldRow>
+      <FieldRow label="Lettre de confraternité reçue"><ToggleBtn on={!!r.lettreConfraterniteRecue} onClick={() => patch({ lettreConfraterniteRecue: !r.lettreConfraterniteRecue })} /></FieldRow>
+
+      <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "20px 0 8px" }}>Situation financière</h4>
+      <FieldRow label="Honoraires">
+        <SelectPill value={r.honorairesSituation} options={["soldes", "restant_du"]} labels={{ soldes: "Soldés", restant_du: "Restant dû" }} onChange={(v) => patch({ honorairesSituation: v })} />
+      </FieldRow>
+      <FieldRow label="Dernière clôture traitée">
+        <input type="date" value={r.derniereCloture || ""} onChange={(e) => patch({ derniereCloture: e.target.value })}
+          style={{ fontFamily: T.mono, fontSize: 12, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card }} />
+      </FieldRow>
+
+      {!r.active && (
+        <button onClick={activer} style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 6, background: T.red, color: "#fff", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+          <AlertTriangle size={14} /> Confirmer la résiliation
+        </button>
+      )}
+
+      {(r.historique || []).length > 0 && (
+        <>
+          <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "20px 0 8px" }}>Historique</h4>
+          {r.historique.map((h, i) => (
+            <div key={i} style={{ fontSize: 11.5, color: T.inkMuted, padding: "6px 0", borderBottom: `1px solid ${T.line}` }}>
+              {fmtFR(h.date)} — {h.motif} · par {h.par}
+            </div>
+          ))}
+        </>
       )}
     </div>
   );
@@ -3765,6 +3987,8 @@ function CadreSocialView({ clients, search, setSearch, roleFilter, setRoleFilter
               <thead>
                 <tr>
                   <th style={thStyle}>Dossier</th><th style={thStyle}>Effectif</th><th style={thStyle}>Cabinet de paie</th>
+                  // dans <thead>, après "Cabinet de paie" //
+<th style={thStyle}>Convention collective</th><th style={thStyle}>Régime dirigeant</th><th style={thStyle}>Seuil</th>
                   {MOIS_ORDER.map((m) => <th key={m} style={{ ...thStyle, textAlign: "center" }}>{m}</th>)}
                 </tr>
               </thead>
@@ -3779,6 +4003,20 @@ function CadreSocialView({ clients, search, setSearch, roleFilter, setRoleFilter
                     <td style={tdStyle}>
                       <input defaultValue={c.social?.cabinetPaie || ""} placeholder="ex. Silae, ADP…" onBlur={(e) => patchSocial(c, { cabinetPaie: e.target.value })}
                         style={{ width: 120, fontSize: 11.5, padding: "3px 6px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }} />
+                      // dans <tbody>, après la cellule "cabinetPaie", avant les cellules mois
+<td style={tdStyle}>
+  <input defaultValue={c.social?.conventionCollective || ""} placeholder="ex. Syntec" onBlur={(e) => patchSocial(c, { conventionCollective: e.target.value })}
+    style={{ width: 100, fontSize: 11.5, padding: "3px 6px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }} />
+</td>
+<td style={tdStyle}>
+  <select defaultValue={c.social?.regimeDirigeant || ""} onChange={(e) => patchSocial(c, { regimeDirigeant: e.target.value })}
+    style={{ fontFamily: T.mono, fontSize: 11, padding: "3px 4px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper }}>
+    <option value="">—</option><option value="assimile_salarie">Assimilé salarié</option><option value="tns">TNS</option>
+  </select>
+</td>
+<td style={tdStyle}>
+  {(() => { const s = seuilEffectifAlert(c.social?.effectif); return s ? <Stamped tone={s.tone} small>{s.label}</Stamped> : <span style={{ color: T.inkMuted }}>—</span>; })()}
+</td>
                     </td>
                     {MOIS_ORDER.map((m) => (
                       <td key={m} style={{ ...tdStyle, textAlign: "center" }}>
