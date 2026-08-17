@@ -1283,6 +1283,9 @@ function CabinetApp({ session, onLogout }) {
               {view === "bilans" && <BilansView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "acomptes" && <AcomptesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "age" && <AgeAgoView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
+              {view === "revision" && (
+  <RevisionView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} setView={navTo} />
+)}
               {view === "mission" && <MissionView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "regimes" && <RegimeChangeView clients={myClients} me={me} search={search} onUpdate={updateClient} />}
               {view === "honoraires" && <HonorairesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
@@ -1698,14 +1701,15 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
       ],
     },
     {
-      id: "fiscalite", label: "Fiscalité & comptabilité",
-      items: [
-        { id: "tva", label: "TVA (CA3 / CA12)", icon: Receipt, badge: counts.tvaAlert, badgeTone: "amber" },
-        { id: "acomptes", label: "Impôts & cotisations", icon: Landmark },
-        { id: "bilans", label: "Bilans", icon: FileWarning, badge: counts.bilanRetard, badgeTone: "red" },
-        { id: "fiscal", label: "Suivi fiscal", icon: CalendarDays },
-      ],
-    },
+  id: "fiscalite", label: "Fiscalité & comptabilité",
+  items: [
+    { id: "tva", label: "TVA (CA3 / CA12)", icon: Receipt, badge: counts.tvaAlert, badgeTone: "amber" },
+    { id: "acomptes", label: "Impôts & cotisations", icon: Landmark },
+    { id: "bilans", label: "Bilans", icon: FileWarning, badge: counts.bilanRetard, badgeTone: "red" },
+    { id: "revision", label: "Révision comptable", icon: Search },   // ← AJOUTÉ
+    { id: "fiscal", label: "Suivi fiscal", icon: CalendarDays },
+  ],
+},
     {
       id: "juridique", label: "Juridique",
       items: [
@@ -3406,6 +3410,55 @@ function AgeAgoView({ clients, search, roleFilter, setRoleFilter, me, onUpdate }
       <Panel title={`Dossiers signalés (${withAlert.length})`}>{withAlert.length === 0 ? <EmptyNote text="Aucun dossier signalé pour le moment." /> : withAlert.map(renderRow)}</Panel>
       <div style={{ height: 16 }} />
       <Panel title="Tous les dossiers">{rest.length === 0 ? <EmptyNote text="Aucun autre dossier dans cette sélection." /> : rest.map(renderRow)}</Panel>
+    </div>
+  );
+}
+function RevisionView({ clients, search, roleFilter, setRoleFilter, me, onUpdate, setView }) {
+  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
+  const [expanded, setExpanded] = useState(null);
+
+  const revisionStatus = (c) => {
+    const rev = c.revision || {};
+    const bankDone = MOIS_ORDER.every((m) => (rev.banqueMois?.[m] || "") !== "");
+    const cotisDone = rev.urssaf && rev.retraite && rev.prevoyance;
+    if (bankDone && cotisDone) return "complete";
+    if (rev.banqueMois && Object.keys(rev.banqueMois).length) return "encours";
+    return "nondemarre";
+  };
+
+  const late = filtered.filter((c) => revisionStatus(c) === "nondemarre");
+  const encours = filtered.filter((c) => revisionStatus(c) === "encours");
+  const complete = filtered.filter((c) => revisionStatus(c) === "complete");
+
+  const renderRow = (c) => {
+    const isOpen = expanded === c.id;
+    return (
+      <div key={c.id} style={{ borderBottom: `1px solid ${T.line}` }}>
+        <div className="hoverRow clickable" onClick={() => setExpanded(isOpen ? null : c.id)}
+          style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 4px", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, fontWeight: 600, fontSize: 12.5, minWidth: 140 }}>{c.nom}</div>
+          <Stamped tone={revisionStatus(c) === "complete" ? "green" : revisionStatus(c) === "encours" ? "amber" : "neutral"} small>
+            {revisionStatus(c) === "complete" ? "Terminée" : revisionStatus(c) === "encours" ? "En cours" : "Non démarrée"}
+          </Stamped>
+          {isOpen ? <ChevronUp size={15} color={T.inkMuted} /> : <ChevronDown size={15} color={T.inkMuted} />}
+        </div>
+        {isOpen && <div style={{ padding: "0 4px 16px" }}><RevisionTab client={c} onUpdate={onUpdate} setView={setView} /></div>}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Révision comptable</h1></Reveal>
+      <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18 }}>
+        Rapprochements bancaires, OD de salaires et révision des comptes de cotisations, dossier par dossier.
+      </p>
+      <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} />
+      <Panel title={`Non démarrée (${late.length})`}>{late.length === 0 ? <EmptyNote text="Aucun dossier dans cette situation." /> : late.map(renderRow)}</Panel>
+      <div style={{ height: 16 }} />
+      <Panel title={`En cours (${encours.length})`}>{encours.length === 0 ? <EmptyNote text="Aucun dossier dans cette situation." /> : encours.map(renderRow)}</Panel>
+      <div style={{ height: 16 }} />
+      <Panel title={`Terminée (${complete.length})`}>{complete.length === 0 ? <EmptyNote text="Aucun dossier dans cette situation." /> : complete.map(renderRow)}</Panel>
     </div>
   );
 }
