@@ -786,6 +786,7 @@ function CabinetApp({ session, onLogout }) {
   const [tasksDb, setTasksDb] = useState([]); // tâches réelles (table "tasks"), indépendantes des échéances fiscales calculées
   const [secteurContent, setSecteurContent] = useState(null);
   const [notifications, setNotifications] = useState([]);
+   const [viewHistory, setViewHistory] = useState([]);
 
   // Empêche le canal temps réel de "rejouer" nos propres écritures juste après qu'on les a envoyées
   const pendingLocalIds = useRef(new Set());
@@ -1196,7 +1197,6 @@ function CabinetApp({ session, onLogout }) {
     });
   };
   const goHome = () => setActiveClientTab(null);
-  const [viewHistory, setViewHistory] = useState([]);
   const navTo = (v) => {
     setViewHistory((h) => (v === view ? h : [...h, view]));
     setView(v);
