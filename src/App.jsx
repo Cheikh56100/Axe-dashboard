@@ -6,7 +6,7 @@ import {
   Filter, ArrowUpRight, CircleDot, Loader2, RefreshCw, History,
   ChevronUp, CalendarDays, CalendarRange, Settings2, Trash2,
   Pencil, ChevronLeft, ShieldCheck, Home, LogOut, Mail, Lock, UserRound,
-  Phone, Briefcase, UserCheck, Wallet, ShieldAlert, Menu, Bell, Clock3
+  Phone, Briefcase, UserCheck, Wallet, ShieldAlert, Menu, Bell, Clock3, ArrowLeft, ExternalLink
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { motion } from "framer-motion";
@@ -421,6 +421,8 @@ function migrateClients(list) {
     if (next.secteurManuel == null) next.secteurManuel = false;
     if (!next.secteur) next.secteur = classifyActivite(next.activite);
     if (!next.formeJuridiqueHistory) next.formeJuridiqueHistory = {};
+    if (!next.lienSharepoint) next.lienSharepoint = "";
+    if (!next.revision) next.revision = {};
     if (!next.corporate) {
       next.corporate = {
         kyc: { lab: false, mandat: false, choixPA: "", beneficiaireEffectif: false, beneficiaireNom: "" },
@@ -452,6 +454,7 @@ const EXCEL_COLUMNS = [
   { key: "nom", label: "Nom" },
   { key: "siren", label: "SIREN" },
   { key: "logiciel", label: "Logiciel" },
+  { key: "lienSharepoint", label: "Lien SharePoint" },
   { key: "collab", label: "Collaborateur" },
   { key: "expert", label: "Expert" },
   { key: "chefMission", label: "Chef de mission" },
@@ -468,6 +471,7 @@ const EXCEL_IMPORT_ALIASES = {
   nom: ["nom", "client", "dossier", "raison sociale"],
   siren: ["siren", "siret"],
   logiciel: ["logiciel"],
+  lienSharepoint: ["lien sharepoint", "sharepoint", "lien", "url"],
   collab: ["collaborateur", "collab"],
   expert: ["expert"],
   chefMission: ["chef de mission", "chefmission"],
@@ -1192,8 +1196,21 @@ function CabinetApp({ session, onLogout }) {
     });
   };
   const goHome = () => setActiveClientTab(null);
-  const navTo = (v) => { setView(v); setActiveClientTab(null); };
-
+  const [viewHistory, setViewHistory] = useState([]);
+  const navTo = (v) => {
+    setViewHistory((h) => (v === view ? h : [...h, view]));
+    setView(v);
+    setActiveClientTab(null);
+  };
+  const goBack = () => {
+    if (activeClientTab) { setActiveClientTab(null); return; } // dans une fiche client → retour à la liste
+    setViewHistory((h) => {
+      if (!h.length) return h;
+      setView(h[h.length - 1]);
+      return h.slice(0, -1);
+    });
+  };
+  const canGoBack = !!activeClientTab || viewHistory.length > 0;
   // Équipe "visible" pour les listes déroulantes (assigner un collaborateur/expert/chef
   // de mission à un dossier) : uniquement les comptes actifs de mon portefeuille — l'Admin,
   // qui n'appartient à aucun portefeuille en particulier, voit tout le monde.
@@ -1209,7 +1226,7 @@ function CabinetApp({ session, onLogout }) {
         mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen} />
       <div style={S.main}>
         <TopBar search={search} setSearch={setSearch} saveStatus={saveStatus} me={me} meColor={meColor}
-          openTabs={openClientTabs} activeTab={activeClientTab} onHome={goHome}
+          openTabs={openClientTabs} activeTab={activeClientTab} onHome={goHome} onBack={goBack} canGoBack={canGoBack}
           onSelectTab={(id) => setActiveClientTab(id)} onCloseTab={closeClientTab}
           onNav={navTo} onOpenClient={openClientTab} onNewClient={() => setShowAddClient(true)} clients={myClients}
           notifCount={myTasks.filter((t) => t.bucket === "retard").length || undefined}
@@ -1223,7 +1240,7 @@ function CabinetApp({ session, onLogout }) {
             // avec les données du dossier sélectionné, au lieu de rester figés sur
             // l'ancien dossier affiché.
             <ClientEditorPage key={activeClient.id} client={activeClient} team={visibleTeam} me={me} onUpdate={updateClient}
-              onClose={() => closeClientTab(activeClient.id)} />
+              onClose={() => closeClientTab(activeClient.id)} setView={navTo} />
           ) : (
             <>
               {view === "dashboard" && (
@@ -1269,7 +1286,7 @@ function CabinetApp({ session, onLogout }) {
               {view === "mission" && <MissionView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "regimes" && <RegimeChangeView clients={myClients} me={me} search={search} onUpdate={updateClient} />}
               {view === "honoraires" && <HonorairesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
-{view === "social" && <CadreSocialView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
+{view === "social" && <CadreSocialView clients={myClients} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "fiscal" && <SuiviFiscalView clients={myClients} team={team} />}
               {view === "mes-taches" && (
                 <TasksPage tasks={[...visibleTasksDb, ...autoTasksForPage]} clients={myClients} team={visibleTeam} me={me} myRow={myRow}
@@ -1277,7 +1294,7 @@ function CabinetApp({ session, onLogout }) {
                   onDelete={deleteTask} onOpenClient={openClientTab} />
               )}
             {view === "planning" && (
-  <PlanningView tasks={visibleTasksDb} clients={myClients} me={me}
+  <PlanningView tasks={[...visibleTasksDb, ...autoTasksForPage]} clients={myClients} me={me}
     onUpdate={handleUpdateTask} onOpenClient={openClientTab} />
 )}
               {view === "equipe" && (
@@ -1336,10 +1353,14 @@ function SaveToast({ status }) {
    ============================================================ */
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = vérification en cours, null = déconnecté
+  const [recoveryMode, setRecoveryMode] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => setSession(sess));
+    const { data: sub } = supabase.auth.onAuthStateChange((event, sess) => {
+      if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
+      setSession(sess);
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 
@@ -1353,8 +1374,42 @@ export default function App() {
       </div>
     );
   }
+  if (recoveryMode) return <NewPasswordPage onDone={() => setRecoveryMode(false)} />;
   if (!session) return <AuthPage />;
   return <CabinetApp session={session} onLogout={() => supabase.auth.signOut()} />;
+}
+
+function NewPasswordPage({ onDone }) {
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (e) => {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    const { error: err } = await supabase.auth.updateUser({ password });
+    setLoading(false);
+    if (err) { setError(err.message || "Une erreur est survenue."); return; }
+    onDone();
+  };
+  return (
+    <div style={{ minHeight: "100vh", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: T.paper, fontFamily: T.sans, padding: 20 }}>
+      <GlobalStyle />
+      <div style={{ width: 380, maxWidth: "94vw", background: T.card, borderRadius: T.radiusLg, boxShadow: T.shadowLg, border: `1px solid ${T.line}`, padding: "32px 30px" }}>
+        <div style={{ fontFamily: T.serif, fontWeight: 800, fontSize: 17, color: T.ink, marginBottom: 6 }}>Nouveau mot de passe</div>
+        <p style={{ fontSize: 12.5, color: T.inkMuted, marginTop: 0, marginBottom: 20 }}>Choisissez un nouveau mot de passe pour votre compte.</p>
+        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ position: "relative" }}>
+            <Lock size={15} style={authIconStyle} />
+            <input required type="password" minLength={6} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={authInputStyle} />
+          </div>
+          {error && <div style={{ fontSize: 12.5, color: T.red, background: T.redSoft, padding: "10px 12px", borderRadius: 10 }}>{error}</div>}
+          <button type="submit" disabled={loading} style={{ padding: "12px 0", borderRadius: 12, border: "none", background: T.navy, color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            {loading && <Loader2 size={15} className="spin" />} Valider
+          </button>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 /* ============================================================
@@ -1375,7 +1430,11 @@ function AuthPage() {
     e.preventDefault();
     setError(""); setInfo(""); setLoading(true);
     try {
-      if (mode === "login") {
+      if (mode === "reset") {
+        const { error: err } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+        if (err) throw err;
+        setInfo("Un email vous a été envoyé avec un lien pour réinitialiser votre mot de passe.");
+      } else if (mode === "login") {
         const { error: err } = await supabase.auth.signInWithPassword({ email, password });
         if (err) throw err;
       } else {
@@ -1464,14 +1523,23 @@ function AuthPage() {
               </div>
             </div>
           )}
-          <div>
-            <label style={authLabelStyle}>Mot de passe</label>
-            <div style={{ position: "relative" }}>
-              <Lock size={15} style={authIconStyle} />
-              <input required type="password" minLength={6} autoComplete={mode === "login" ? "current-password" : "new-password"}
-                value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={authInputStyle} />
+         {mode !== "reset" && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <label style={{ ...authLabelStyle, marginBottom: 0 }}>Mot de passe</label>
+                {mode === "login" && (
+                  <button type="button" onClick={() => { setMode("reset"); setError(""); setInfo(""); }} style={{ ...authLinkStyle, fontSize: 11 }}>
+                    Mot de passe oublié ?
+                  </button>
+                )}
+              </div>
+              <div style={{ position: "relative" }}>
+                <Lock size={15} style={authIconStyle} />
+                <input required type="password" minLength={6} autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={authInputStyle} />
+              </div>
             </div>
-          </div>
+          )}
 
           {error && <div style={{ fontSize: 12.5, color: T.red, background: T.redSoft, padding: "10px 12px", borderRadius: 10 }}>{error}</div>}
           {info && <div style={{ fontSize: 12.5, color: T.green, background: T.greenSoft, padding: "10px 12px", borderRadius: 10 }}>{info}</div>}
@@ -1482,15 +1550,19 @@ function AuthPage() {
             display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 10px 24px -8px rgba(79,70,229,0.5)",
           }}>
             {loading && <Loader2 size={15} className="spin" />}
-            {mode === "login" ? "Se connecter" : "Créer mon compte"}
+            {mode === "login" ? "Se connecter" : mode === "reset" ? "Envoyer le lien" : "Créer mon compte"}
           </button>
         </motion.form>
 
         <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: T.inkMuted }}>
-          {mode === "login" ? (
+          {mode === "login" && (
             <>Pas encore de compte ? <button type="button" onClick={() => { setMode("signup"); setError(""); setInfo(""); }} style={authLinkStyle}>Inscrivez-vous</button></>
-          ) : (
+          )}
+          {mode === "signup" && (
             <>Déjà un compte ? <button type="button" onClick={() => { setMode("login"); setError(""); setInfo(""); }} style={authLinkStyle}>Connectez-vous</button></>
+          )}
+          {mode === "reset" && (
+            <>Vous vous souvenez de votre mot de passe ? <button type="button" onClick={() => { setMode("login"); setError(""); setInfo(""); }} style={authLinkStyle}>Connectez-vous</button></>
           )}
         </div>
       </motion.div>
@@ -1784,7 +1856,7 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
 /* ============================================================
    TOP BAR
    ============================================================ */
-function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTab, onHome, onSelectTab, onCloseTab, onNav, onOpenClient, onNewClient, clients, notifCount, onOpenMobileMenu, notifications = [], onMarkNotificationRead, onOpenClient2 }) {
+function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTab, onHome, onBack, canGoBack, onSelectTab, onCloseTab, onNav, onOpenClient, onNewClient, clients, notifCount, onOpenMobileMenu, notifications, onMarkNotificationRead, onOpenClient2 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
@@ -1792,7 +1864,6 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
   const pickerRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  // Raccourci clavier Cmd+K / Ctrl+K : ouvre la recherche rapide depuis n'importe où
   useEffect(() => {
     const onKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -1805,8 +1876,6 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Recherche rapide : Entrée dans le champ de recherche ouvre directement le
-  // dossier trouvé (par nom ou SIREN) s'il n'y en a qu'un seul de correspondant.
   const handleSearchKeyDown = (e) => {
     if (e.key === "Escape") { setSearch(""); setSearchOpen(false); e.currentTarget.blur(); return; }
     if (e.key !== "Enter") return;
@@ -1833,7 +1902,6 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
     return list.slice(0, 40);
   }, [clients, pickerQuery]);
 
-  // Chaque icône reprend exactement celle utilisée pour le même élément dans le menu latéral
   const toolIcons = [
     { key: "clients", icon: Users, title: "Registre clients", onClick: () => onNav("clients") },
     { key: "tva", icon: Receipt, title: "TVA — CA3/CA12", onClick: () => onNav("tva") },
@@ -1845,12 +1913,20 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
     { key: "planning", icon: CalendarRange, title: "Mon planning", badge: notifCount, onClick: () => onNav("planning") },
     { key: "equipe", icon: Settings2, title: "Équipe", onClick: () => onNav("equipe") },
   ];
+
+  const unread = (notifications || []).filter((n) => !n.lu).length + (notifCount || 0);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, background: T.card, borderBottom: `1px solid ${T.line}` }}>
       <div style={{ display: "flex", alignItems: "center", padding: "0 10px", height: 46, gap: 2 }}>
         <button onClick={onOpenMobileMenu} title="Menu" className="md:hidden flex items-center justify-center w-8 h-8 rounded-lg text-inksoft hover:bg-app mr-1 shrink-0">
           <Menu size={18} strokeWidth={2} />
         </button>
+        {canGoBack && (
+          <button className="topIconBtn" onClick={onBack} title="Retour" style={{ marginRight: 2 }}>
+            <ArrowLeft size={16} strokeWidth={2} />
+          </button>
+        )}
         <button className="topTab" onClick={onHome} title="Accueil" style={{
           background: !activeTab ? T.paperDeep : "transparent", color: !activeTab ? T.navy : T.inkMuted, border: "none", marginRight: 2,
         }}>
@@ -1894,23 +1970,21 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
           )}
         </div>
 
-        {searchOpen && (
-          <div className="relative ml-2.5 flex-[0_1_280px] hidden sm:block">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-inkmuted" />
-            <input ref={searchInputRef} autoFocus value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={handleSearchKeyDown}
-              onBlur={() => !search && setSearchOpen(false)}
-              placeholder="Rechercher un dossier, un SIREN…"
-              className="input-field !rounded-full !py-1.5 !pl-8 !pr-16 !bg-app text-xs w-full" />
-            <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[9.5px] font-mono text-inkmuted bg-white border border-line rounded px-1.5 py-0.5">Échap</kbd>
-          </div>
-        )}
-
         <div className="ml-auto flex items-center gap-0.5">
           <div style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: T.mono, fontSize: 10.5, color: T.inkMuted, marginRight: 8 }}>
             {saveStatus === "saving" && <><Loader2 size={12} className="spin" /> enreg.…</>}
             {saveStatus === "saved" && <><Check size={12} color={T.green} /> enregistré</>}
           </div>
-          {!searchOpen && (
+          {searchOpen ? (
+            <div className="relative flex-[0_1_260px] hidden sm:block mr-1">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-inkmuted" />
+              <input ref={searchInputRef} value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={handleSearchKeyDown}
+                onBlur={() => !search && setSearchOpen(false)}
+                placeholder="Rechercher un dossier, un SIREN…"
+                className="input-field !rounded-full !py-1.5 !pl-8 !pr-16 !bg-app text-xs w-full" />
+              <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[9.5px] font-mono text-inkmuted bg-white border border-line rounded px-1.5 py-0.5">Échap</kbd>
+            </div>
+          ) : (
             <button onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 0); }} title="Rechercher (⌘K)"
               className="hidden sm:flex items-center gap-2 rounded-full border border-line bg-app px-3 py-1.5 text-xs text-inkmuted hover:border-accent hover:text-accent transition-colors mr-1">
               <Search size={13} />
@@ -1919,16 +1993,15 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
             </button>
           )}
           <button className="sm:hidden topIconBtn" title="Rechercher" onClick={() => setSearchOpen((s) => !s)}><Search size={16} strokeWidth={1.9} /></button>
+
           <div className="relative hidden md:block">
-            {(() => { const unread = notifications.filter((n) => !n.lu).length + notifCount; return (
             <button onClick={() => setNotifOpen((s) => !s)} title="Notifications" className="topIconBtn"><Bell size={16} strokeWidth={1.9} />
               {!!unread && <span className="absolute top-1 right-1 bg-badge-red-text text-white text-[9px] font-bold rounded-full px-[4px] leading-[13px]">{unread}</span>}
             </button>
-            ); })()}
             {notifOpen && (
               <div className="absolute right-0 top-9 w-80 card p-3 z-30 max-h-96 overflow-y-auto scrollbar">
                 <div className="text-xs font-bold text-ink mb-2">Notifications</div>
-                {notifications.length === 0 && !notifCount && (
+                {(notifications || []).length === 0 && !notifCount && (
                   <div className="text-xs text-inkmuted italic px-2 py-1">Aucune notification pour le moment.</div>
                 )}
                 {!!notifCount && (
@@ -1936,7 +2009,7 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
                     {notifCount} échéance{notifCount > 1 ? "s" : ""} en retard sur votre planning
                   </div>
                 )}
-                {notifications.map((n) => (
+                {(notifications || []).map((n) => (
                   <div key={n.id} onClick={() => { onMarkNotificationRead?.(n.id); if (n.client_id && onOpenClient2) onOpenClient2(n.client_id); setNotifOpen(false); }}
                     className="hoverRow clickable text-xs rounded-lg p-2 cursor-pointer flex items-start gap-2">
                     <span className={`w-1.5 h-1.5 rounded-full mt-1 shrink-0 ${n.lu ? "bg-line" : "bg-badge-red-text"}`} />
@@ -1949,6 +2022,7 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
               </div>
             )}
           </div>
+
           {toolIcons.map((ic) => {
             const Icon = ic.icon;
             return (
@@ -2323,8 +2397,16 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
                           onChange={(e) => onUpdate(c.id, { dateCloture: e.target.value })}
                           className="border-none bg-transparent font-mono text-[11.5px] text-inkmuted w-[118px]" />
                       </div>
-                      <div className="text-xs text-inksoft font-mono">{c.tvaRegime || "—"}</div>
-                      <div className="flex gap-1.5 flex-wrap">{statusBadge}</div>
+                      <div className="text-xs text-inksoft font-mono">{c.tvaRegime || "—"}{c.logiciel ? ` · ${c.logiciel}` : ""}</div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {statusBadge}
+                        {c.lienSharepoint && (
+                          <a href={c.lienSharepoint} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+                            title="Ouvrir dans SharePoint" style={{ color: T.navy, display: "flex", alignItems: "center" }}>
+                            <ExternalLink size={13} />
+                          </a>
+                        )}
+                      </div>
                       <ChevronRight size={15} className="text-inkmuted" />
                     </div>
                     {/* Carte empilée (mobile) */}
@@ -2338,6 +2420,12 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
                         <span className="font-mono">{c.siren || "—"}</span>
                         {roles.length > 0 && <span>· {roles.join(", ")}</span>}
                         {c.tvaRegime && <span className="font-mono">· {c.tvaRegime}</span>}
+                        {c.logiciel && <span className="font-mono">· {c.logiciel}</span>}
+                        {c.lienSharepoint && (
+                          <a href={c.lienSharepoint} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: T.navy, display: "flex", alignItems: "center" }}>
+                            <ExternalLink size={12} />
+                          </a>
+                        )}
                       </div>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {statusBadge}
@@ -2364,7 +2452,7 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
    Remplace l'ancien tiroir latéral : le dossier s'ouvre dans un
    onglet de la barre du haut, comme "AC INVEST" chez MyUnisoft.
    ============================================================ */
-function ClientEditorPage({ client, team, me, onUpdate, onClose }) {
+function ClientEditorPage({ client, team, me, onUpdate, onClose, setView }) {
   const [tab, setTab] = useState("infos");
   // Brouillon local : toutes les modifications restent ici tant qu'on n'a pas cliqué "Enregistrer".
   // Reset uniquement quand on change de dossier (changement de client.id), pas à chaque frappe.
@@ -2382,7 +2470,7 @@ function ClientEditorPage({ client, team, me, onUpdate, onClose }) {
   const tabs = [
     { id: "infos", label: "Infos générales" }, { id: "corporate", label: "Corporate" }, { id: "tva", label: "TVA" },
     { id: "bilan", label: "Bilan" }, { id: "acomptes", label: "Acomptes" }, { id: "age", label: "AGE / AGO" },
-    { id: "formeJuridique", label: "Forme juridique" }, { id: "mission", label: "Accueil" },
+    { id: "formeJuridique", label: "Forme juridique" }, { id: "revision", label: "Révision" }, { id: "mission", label: "Intégration" },
     { id: "honoraires", label: "Honoraires" }, { id: "social", label: "Social" }, { id: "notes", label: "Notes" },
   ];
   return (
@@ -2449,6 +2537,7 @@ function ClientEditorPage({ client, team, me, onUpdate, onClose }) {
         {tab === "acomptes" && <AcomptesTab client={draft} onUpdate={patchDraft} />}
         {tab === "age" && <AgeAgoEditor client={draft} onUpdate={patchDraft} />}
         {tab === "formeJuridique" && <FormeJuridiqueEditor client={draft} onUpdate={patchDraft} />}
+{tab === "revision" && <RevisionTab client={draft} onUpdate={patchDraft} setView={setView} />}
         {tab === "mission" && <MissionTab client={draft} onUpdate={patchDraft} />}
         {tab === "notes" && <NotesTab client={client} me={me} onUpdate={onUpdate} />}
       </div>
@@ -2480,6 +2569,17 @@ function InfosTab({ client, team, onUpdate }) {
     <div>
       <FieldRow label="SIREN"><TextInput defaultValue={client.siren} onCommit={(v) => onUpdate(client.id, { siren: v })} width={140} /></FieldRow>
       <FieldRow label="Logiciel"><SelectPill value={client.logiciel} options={["MYUNISOFT", "QUADRA"]} onChange={(v) => onUpdate(client.id, { logiciel: v })} /></FieldRow>
+      <FieldRow label="Lien SharePoint">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <TextInput defaultValue={client.lienSharepoint} onCommit={(v) => onUpdate(client.id, { lienSharepoint: v })} placeholder="https://…sharepoint.com/…" width={200} align="left" />
+          {client.lienSharepoint && (
+            <a href={client.lienSharepoint} target="_blank" rel="noopener noreferrer" title="Ouvrir dans SharePoint"
+              style={{ color: T.navy, display: "flex", alignItems: "center" }}>
+              <ExternalLink size={15} />
+            </a>
+          )}
+        </div>
+      </FieldRow>
       <FieldRow label="Forme juridique"><SelectPill value={client.formeJuridique} options={["EI", "EURL", "SARL", "SAS", "SASU", "SCI", "SCM", "SELARL", "SA", "SNC", "Association"]} onChange={(v) => onUpdate(client.id, { formeJuridique: v })} /></FieldRow>
       <FieldRow label="Capital social"><TextInput defaultValue={client.capital} onCommit={(v) => onUpdate(client.id, { capital: v })} placeholder="ex. 5 000 €" width={140} /></FieldRow>
       <FieldRow label="Activité">
@@ -2521,6 +2621,7 @@ function InfosTab({ client, team, onUpdate }) {
   );
 }
 
+const LAB_RISQUE_OPTIONS = ["Faible", "Moyen", "Élevé"];
 function CorporateTab({ client, onUpdate }) {
   const corp = client.corporate || { kyc: {}, kycExtra: [], notes: "" };
   const kyc = corp.kyc || {};
@@ -2539,13 +2640,59 @@ function CorporateTab({ client, onUpdate }) {
     const list = (corp.kycExtra || []).filter((_, i) => i !== idx);
     onUpdate(client.id, { corporate: { ...corp, kycExtra: list } });
   };
+
+  // Le LAB doit être révisé périodiquement (recommandé : tous les 12 mois)
+  const labAJour = kyc.lab && kyc.labDate;
+  const moisDepuisLab = kyc.labDate ? Math.floor((Date.now() - new Date(kyc.labDate).getTime()) / (1000 * 60 * 60 * 24 * 30)) : null;
+  const labARevisor = labAJour && moisDepuisLab !== null && moisDepuisLab >= 12;
+
+  const extraItems = corp.kycExtra || [];
+  const extraDone = extraItems.filter((i) => i.done).length;
+  const coreItems = [!!kyc.lab, !!kyc.mandat, !!kyc.beneficiaireEffectif];
+  const coreDone = coreItems.filter(Boolean).length;
+  const totalItems = coreItems.length + extraItems.length;
+  const totalDone = coreDone + extraDone;
+
   return (
     <div>
-      <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "4px 0 8px", display: "flex", alignItems: "center", gap: 6 }}>
-        <ShieldCheck size={15} /> Base corporate / LAB
-      </h4>
-      <FieldRow label="Questionnaire LAB complété"><ToggleBtn on={!!kyc.lab} onClick={() => patchKyc({ lab: !kyc.lab })} /></FieldRow>
-      <FieldRow label="Mandat signé"><ToggleBtn on={!!kyc.mandat} onClick={() => patchKyc({ mandat: !kyc.mandat })} /></FieldRow>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+          <ShieldCheck size={15} /> Base corporate / LAB
+        </h4>
+        <Stamped tone={labARevisor ? "red" : totalDone === totalItems ? "green" : "amber"} small>
+          {labARevisor ? "LAB à réviser" : totalDone === totalItems ? "Dossier complet" : `${totalDone}/${totalItems} pièces`}
+        </Stamped>
+      </div>
+      <div style={{ height: 6, borderRadius: 4, background: T.paperDeep, overflow: "hidden", marginBottom: 18 }}>
+        <div style={{ width: `${totalItems ? (totalDone / totalItems) * 100 : 0}%`, height: "100%", background: T.navy }} />
+      </div>
+
+      <FieldRow label="Questionnaire LAB complété">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <ToggleBtn on={!!kyc.lab} onClick={() => patchKyc({ lab: !kyc.lab, labDate: !kyc.lab ? todayISO() : kyc.labDate })} />
+          {kyc.lab && (
+            <input type="date" value={kyc.labDate || ""} onChange={(e) => patchKyc({ labDate: e.target.value })}
+              style={{ fontFamily: T.mono, fontSize: 12, padding: "4px 7px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card }} />
+          )}
+        </div>
+      </FieldRow>
+      {labARevisor && (
+        <div style={{ fontSize: 11.5, color: T.red, background: T.redSoft, padding: "7px 10px", borderRadius: 8, margin: "0 0 10px" }}>
+          Questionnaire LAB daté de plus de 12 mois — une révision est recommandée.
+        </div>
+      )}
+      <FieldRow label="Niveau de risque LAB">
+        <SelectPill value={kyc.risqueLab} options={LAB_RISQUE_OPTIONS} onChange={(v) => patchKyc({ risqueLab: v })} />
+      </FieldRow>
+      <FieldRow label="Mandat signé">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <ToggleBtn on={!!kyc.mandat} onClick={() => patchKyc({ mandat: !kyc.mandat, mandatDate: !kyc.mandat ? todayISO() : kyc.mandatDate })} />
+          {kyc.mandat && (
+            <input type="date" value={kyc.mandatDate || ""} onChange={(e) => patchKyc({ mandatDate: e.target.value })}
+              style={{ fontFamily: T.mono, fontSize: 12, padding: "4px 7px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card }} />
+          )}
+        </div>
+      </FieldRow>
       <FieldRow label="Choix du PA"><TextInput defaultValue={kyc.choixPA} onCommit={(v) => patchKyc({ choixPA: v })} placeholder="Prestataire agréé retenu" width={180} align="left" /></FieldRow>
       <FieldRow label="Bénéficiaire effectif identifié"><ToggleBtn on={!!kyc.beneficiaireEffectif} onClick={() => patchKyc({ beneficiaireEffectif: !kyc.beneficiaireEffectif })} /></FieldRow>
       <FieldRow label="Nom du bénéficiaire effectif"><TextInput defaultValue={kyc.beneficiaireNom} onCommit={(v) => patchKyc({ beneficiaireNom: v })} placeholder="Nom, prénom" width={180} align="left" /></FieldRow>
@@ -2717,17 +2864,32 @@ function AcomptesTab({ client, onUpdate }) {
   const is = client.is || {}; const cfe = client.cfe || {};
   const toggleIs = (f) => onUpdate(client.id, { is: { ...is, [f]: !is[f] } });
   const toggleCfe = (f) => onUpdate(client.id, { cfe: { ...cfe, [f]: !cfe[f] } });
+  const isConcerne = Number(is.montantN1) > 3000;
+  const cfeConcerne = Number(cfe.montantN1) > 3000;
+  const numInputStyle = { fontFamily: T.mono, fontSize: 12.5, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, width: 110, textAlign: "right" };
   return (
     <div>
       <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "4px 0 8px" }}>Impôt sur les sociétés</h4>
-      <FieldRow label="Concerné (IS N-1 > 3000€)"><ToggleBtn on={!!is.concerne} onClick={() => toggleIs("concerne")} /></FieldRow>
+      <FieldRow label="Montant IS N-1">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <input type="number" defaultValue={is.montantN1 ?? ""} placeholder="0"
+            onBlur={(e) => onUpdate(client.id, { is: { ...is, montantN1: e.target.value } })} style={numInputStyle} />
+          <Stamped tone={isConcerne ? "amber" : "neutral"} small>{isConcerne ? "Concerné (> 3000€)" : "Non concerné"}</Stamped>
+        </div>
+      </FieldRow>
       <FieldRow label="Acompte mars"><ToggleBtn on={!!is.mars} onClick={() => toggleIs("mars")} /></FieldRow>
       <FieldRow label="Acompte juin"><ToggleBtn on={!!is.juin} onClick={() => toggleIs("juin")} /></FieldRow>
       <FieldRow label="Acompte septembre"><ToggleBtn on={!!is.sept} onClick={() => toggleIs("sept")} /></FieldRow>
       <FieldRow label="Acompte décembre"><ToggleBtn on={!!is.dec} onClick={() => toggleIs("dec")} /></FieldRow>
       <FieldRow label="Solde IS"><ToggleBtn on={!!is.solde} onClick={() => toggleIs("solde")} /></FieldRow>
       <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "20px 0 8px" }}>CFE</h4>
-      <FieldRow label="Concerné (CFE N-1 > 3000€)"><ToggleBtn on={!!cfe.concerne} onClick={() => toggleCfe("concerne")} /></FieldRow>
+      <FieldRow label="Montant CFE N-1">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <input type="number" defaultValue={cfe.montantN1 ?? ""} placeholder="0"
+            onBlur={(e) => onUpdate(client.id, { cfe: { ...cfe, montantN1: e.target.value } })} style={numInputStyle} />
+          <Stamped tone={cfeConcerne ? "amber" : "neutral"} small>{cfeConcerne ? "Concerné (> 3000€)" : "Non concerné"}</Stamped>
+        </div>
+      </FieldRow>
       <FieldRow label="Acompte juin"><ToggleBtn on={!!cfe.juin} onClick={() => toggleCfe("juin")} /></FieldRow>
       <FieldRow label="Solde décembre"><ToggleBtn on={!!cfe.dec} onClick={() => toggleCfe("dec")} /></FieldRow>
     </div>
@@ -3041,6 +3203,69 @@ function FormeJuridiqueEditor({ client, onUpdate }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+function RevisionTab({ client, onUpdate, setView }) {
+  const rev = client.revision || {};
+  const patch = (f) => onUpdate(client.id, { revision: { ...rev, ...f } });
+  const cycleMonth = (mois) => {
+    const banqueMois = rev.banqueMois || {};
+    patch({ banqueMois: { ...banqueMois, [mois]: bankCycle(banqueMois[mois]) } });
+  };
+  const isBtp = client.secteur === "batiment";
+
+  const cotisationRow = (key, label) => (
+    <FieldRow label={label}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <ToggleBtn on={!!rev[key]} onClick={() => patch({ [key]: !rev[key], [`${key}Date`]: !rev[key] ? todayISO() : rev[`${key}Date`] })} />
+        {rev[key] && (
+          <input type="date" value={rev[`${key}Date`] || ""} onChange={(e) => patch({ [`${key}Date`]: e.target.value })}
+            style={{ fontFamily: T.mono, fontSize: 12, padding: "4px 7px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card }} />
+        )}
+      </div>
+    </FieldRow>
+  );
+
+  return (
+    <div>
+      <Panel title="Rapprochements bancaires">
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {MOIS_ORDER.map((m) => (
+            <button key={m} className="clickable" onClick={() => cycleMonth(m)} style={{ background: "none", border: `1px solid ${T.line}`, borderRadius: 8, padding: "6px 4px", minWidth: 50, textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: T.inkMuted, marginBottom: 3 }}>{m}</div>
+              <Stamped tone={bankTone(rev.banqueMois?.[m])} small>{bankLabel(rev.banqueMois?.[m])}</Stamped>
+            </button>
+          ))}
+        </div>
+      </Panel>
+
+      <div style={{ height: 14 }} />
+
+      <Panel title="OD de salaires">
+        <p style={{ fontSize: 12, color: T.inkMuted, margin: "0 0 10px" }}>Le suivi mois par mois se fait depuis l'onglet Cadre social.</p>
+        <button onClick={() => setView && setView("social")} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${T.line}`, borderRadius: 9, padding: "7px 12px", fontSize: 12, color: T.navy, cursor: "pointer" }}>
+          <ArrowUpRight size={13} /> Ouvrir le Cadre social
+        </button>
+      </Panel>
+
+      <div style={{ height: 14 }} />
+
+      <Panel title="Révision des comptes de cotisations">
+        {cotisationRow("urssaf", "URSSAF révisé")}
+        {cotisationRow("retraite", "Caisse de retraite révisée")}
+        {cotisationRow("prevoyance", "Prévoyance révisée")}
+      </Panel>
+
+      {isBtp && (
+        <>
+          <div style={{ height: 14 }} />
+          <Panel title="Spécifique BTP">
+            {cotisationRow("proBtp", "PRO BTP révisé")}
+            {cotisationRow("ciBtp", "CIBTP (caisse congés payés) révisé")}
+          </Panel>
+        </>
+      )}
     </div>
   );
 }
@@ -3434,6 +3659,18 @@ function odLabel(val) {
   const v = (val || "").toUpperCase();
   return v === "COMPTA" ? "Compta" : v === "RECU" ? "Reçu" : v === "NA" ? "N/A" : "·";
 }
+function bankCycle(val) {
+  const v = (val || "").toUpperCase();
+  return v === "" ? "FAIT" : v === "FAIT" ? "NA" : "";
+}
+function bankTone(val) {
+  const v = (val || "").toUpperCase();
+  return v === "FAIT" ? "green" : v === "NA" ? "neutral" : "neutral";
+}
+function bankLabel(val) {
+  const v = (val || "").toUpperCase();
+  return v === "FAIT" ? "Fait" : v === "NA" ? "N/A" : "·";
+}
 function ConcerneToggle({ on, onChange, small }) {
   const size = small ? { fontSize: 9.5, padding: "2px 8px" } : { fontSize: 11, padding: "4px 11px" };
   return (
@@ -3443,7 +3680,7 @@ function ConcerneToggle({ on, onChange, small }) {
     </div>
   );
 }
-function CadreSocialView({ clients, search, roleFilter, setRoleFilter, me, onUpdate }) {
+function CadreSocialView({ clients, search, setSearch, roleFilter, setRoleFilter, me, onUpdate }) {
   const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
   const concernes = filtered.filter((c) => c.social?.concerne);
   const autres = filtered.filter((c) => !c.social?.concerne);
@@ -3461,7 +3698,7 @@ function CadreSocialView({ clients, search, roleFilter, setRoleFilter, me, onUpd
         Le cabinet n'établit pas les bulletins de paie. Ce suivi concerne uniquement la réception et la comptabilisation des OD de salaire transmises par le cabinet de paie externe.
         {" "}Cliquez une cellule : vide → <Stamped tone="amber" small>Reçu</Stamped> → <Stamped tone="green" small>Compta</Stamped> → <Stamped tone="neutral" small>N/A</Stamped>.
       </p>
-      <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} />
+      <FilterBar search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} />
 
       <Panel title={`Dossiers concernés (${concernes.length})`}>
         {concernes.length === 0 ? <EmptyNote text="Aucun dossier marqué « concerné » pour l'instant." /> : (
@@ -3856,21 +4093,22 @@ const PLANNING_FILTERS = [
   { id: "semaine", label: "Cette semaine" },
 ];
 
-function PlanningTaskCard({ task, client, draggable = true }) {
+function PlanningTaskCard({ task, client, draggable = true, onOpenClient }) {
   const tone = TASK_PRIORITE_TONE[task.priorite] || "neutral";
   return (
     <div
       draggable={draggable}
-      onDragStart={(e) => e.dataTransfer.setData("text/plain", JSON.stringify({ type: "task", id: task.id }))}
+      onDragStart={(e) => draggable && e.dataTransfer.setData("text/plain", JSON.stringify({ type: "task", id: task.id }))}
+      onClick={() => task.isAuto && client && onOpenClient && onOpenClient(client.id)}
       style={{
         background: T.card, border: `1px solid ${T.line}`, borderLeft: `4px solid ${tone === "red" ? T.red : tone === "amber" ? T.amber : T.navy}`,
-        borderRadius: 9, padding: "9px 10px", marginBottom: 7, cursor: draggable ? "grab" : "default", boxShadow: T.shadowSm,
+        borderRadius: 9, padding: "9px 10px", marginBottom: 7, cursor: task.isAuto ? "pointer" : (draggable ? "grab" : "default"), boxShadow: T.shadowSm,
       }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
         <span style={{ fontSize: 12, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {client ? client.nom : "Sans dossier"}
         </span>
-        <Stamped tone={tone} small>{TASK_PRIORITE_BY_CODE[task.priorite]?.label}</Stamped>
+        {task.isAuto ? <Stamped tone="neutral" small>Auto</Stamped> : <Stamped tone={tone} small>{TASK_PRIORITE_BY_CODE[task.priorite]?.label}</Stamped>}
       </div>
       <div style={{ fontSize: 11, color: T.inkMuted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.nom}</div>
     </div>
@@ -3943,7 +4181,7 @@ function PlanningView({ tasks, clients, me, onUpdate, onOpenClient }) {
           </div>
           <div className="scrollbar" style={{ maxHeight: 560, overflowY: "auto" }}>
             {unscheduled.length === 0 ? <EmptyNote text="Tout est planifié." /> : unscheduled.map((t) => (
-              <PlanningTaskCard key={t.id} task={t} client={clientById[t.client_id]} />
+              <PlanningTaskCard key={t.id} task={t} client={clientById[t.client_id]} draggable={!t.isAuto} onOpenClient={onOpenClient} />
             ))}
           </div>
         </div>
