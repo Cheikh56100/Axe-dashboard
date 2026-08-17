@@ -4026,15 +4026,6 @@ function CadreSocialView({ clients, search, setSearch, roleFilter, setRoleFilter
     </tr>
   ))}
 </tbody>
-                      <td key={m} style={{ ...tdStyle, textAlign: "center" }}>
-                        <button className="clickable" onClick={() => cycleMonth(c, m)} style={{ background: "none", border: "none", padding: 0 }}>
-                          <Stamped tone={odTone(c.social?.odMois?.[m])} small>{odLabel(c.social?.odMois?.[m])}</Stamped>
-                        </button>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
             </table>
           </div>
         )}
