@@ -527,6 +527,8 @@ function parseClientsExcelFile(file) {
             let v = r[h];
             if (key === "tvaExig") v = v === "" ? "" : parseInt(v, 10) || "";
             if (typeof v === "string") v = v.trim();
+            // dans parseClientsExcelFile, juste après la ligne : if (typeof v === "string") v = v.trim();
+if (key === "siren" && v !== "") v = String(v).trim();
             out[key] = v;
           });
           return out;
@@ -1885,7 +1887,8 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
     if (e.key !== "Enter") return;
     const q = search.trim().toLowerCase();
     if (!q) return;
-    const matches = clients.filter((c) => c.nom.toLowerCase().includes(q) || (c.siren || "").includes(q));
+    // APRÈS
+const matches = clients.filter((c) => c.nom.toLowerCase().includes(q) || String(c.siren || "").includes(q));
     if (matches.length >= 1) {
       onOpenClient(matches[0].id);
       setSearch("");
@@ -1902,7 +1905,8 @@ function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTa
 
   const pickerResults = useMemo(() => {
     const q = pickerQuery.trim().toLowerCase();
-    const list = q ? clients.filter((c) => c.nom.toLowerCase().includes(q) || (c.siren || "").includes(q)) : clients;
+   // APRÈS
+const list = q ? clients.filter((c) => c.nom.toLowerCase().includes(q) || String(c.siren || "").includes(q)) : clients;
     return list.slice(0, 40);
   }, [clients, pickerQuery]);
 
@@ -2080,10 +2084,11 @@ function filterClients(clients, search, roleFilter, me, regimeFilter, statutFilt
   else if (statutFilter === "inactif") out = out.filter((c) => c.statutDossier === "inactif");
   // statutFilter === "tous" -> pas de filtre supplémentaire
   if (regimeFilter && regimeFilter !== "Tous") out = out.filter((c) => c.tvaRegime === regimeFilter);
-  if (search.trim()) {
+  // APRÈS
+if (search.trim()) {
     const q = search.trim().toLowerCase();
-    out = out.filter((c) => c.nom.toLowerCase().includes(q) || (c.siren || "").includes(q));
-  }
+    out = out.filter((c) => c.nom.toLowerCase().includes(q) || String(c.siren || "").includes(q));
+}
   return out;
 }
 function Stamped({ tone = "green", children, small }) {
