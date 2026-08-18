@@ -6,7 +6,8 @@ import {
   Filter, ArrowUpRight, CircleDot, Loader2, RefreshCw, History,
   ChevronUp, CalendarDays, CalendarRange, Settings2, Trash2,
   Pencil, ChevronLeft, ShieldCheck, Home, LogOut, Mail, Lock, UserRound,
-  Phone, Briefcase, UserCheck, Wallet, ShieldAlert, Menu, Bell, Clock3, ArrowLeft, ExternalLink
+  Phone, Briefcase, UserCheck, Wallet, ShieldAlert, Menu, Bell, Clock3, ArrowLeft, ExternalLink,
+  Eye, EyeOff, Copy, KeyRound, Download, MapPin, Contact
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { motion } from "framer-motion";
@@ -15,6 +16,7 @@ import { fetchTasks, createTask, updateTask, completeTask, deleteTask, subscribe
 import { logActivity, activityMessages } from "./services/activity";
 import { bucketize as bucketizeDeadlines, BUCKET_LABELS as DEADLINE_BUCKET_LABELS } from "./services/deadlines";
 import { TASK_STATUTS, TASK_STATUT_BY_CODE, TASK_PRIORITES, TASK_PRIORITE_BY_CODE, taskSortWeight, PILOTAGE_COLORS } from "./constants/pilotage";
+import { detectAllAnomalies } from "./services/anomalies";
 
 const T = {
   paper: "#F3F4F6", paperDeep: "#EEF2FF", ink: "#0F172A", inkSoft: "#475569", inkMuted: "#94A3B8",
@@ -417,8 +419,10 @@ function migrateClients(list) {
     if (!next.chefMission) next.chefMission = "";
     if (!next.dateCloture) next.dateCloture = "";
     if (!next.formeJuridique) next.formeJuridique = "";
+    if (!next.regimeFiscal) next.regimeFiscal = "";
     if (!next.capital) next.capital = "";
     if (!next.activite) next.activite = "";
+    if (!next.contact) next.contact = { telephone: "", email: "", adresse: "", codePostal: "", ville: "", contactNom: "", contactFonction: "" };
     if (next.secteurManuel == null) next.secteurManuel = false;
     if (!next.secteur) next.secteur = classifyActivite(next.activite);
     if (!next.formeJuridiqueHistory) next.formeJuridiqueHistory = {};
@@ -454,6 +458,10 @@ if (next.social.gestionnaireEmail == null) next.social.gestionnaireEmail = "";
 if (next.social.gestionnaireTel == null) next.social.gestionnaireTel = "";
 if (next.social.conventionCollective == null) next.social.conventionCollective = "";
 if (next.social.regimeDirigeant == null) next.social.regimeDirigeant = "";
+    if (!next.demandesClient) next.demandesClient = [];
+    if (!next.validationDossier) next.validationDossier = { collaborateur: false, chefMission: false, dateCollaborateur: "", dateChefMission: "", commentaire: "" };
+    if (!next.rentabilite) next.rentabilite = { tempsPrevu: "", tempsReel: "", tarifHoraire: "", margeCible: "" };
+    if (!next.documentsSuivi) next.documentsSuivi = { demandes: 0, recus: 0, controles: 0 };
     if (!next.notesCollab) next.notesCollab = [];
     if (!next.resiliation) {
   next.resiliation = {
@@ -922,6 +930,7 @@ function CabinetApp({ session, onLogout }) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("Tous");
   const [regimeFilter, setRegimeFilter] = useState("Tous");
+  const [collabQuickFilter, setCollabQuickFilter] = useState(null); // filtre rapide "clic depuis Supervision d'équipe"
   const [showAddClient, setShowAddClient] = useState(false);
   const [saveStatus, setSaveStatus] = useState("idle");
   const [openClientTabs, setOpenClientTabs] = useState([]); // [{id, label}]
@@ -1109,11 +1118,18 @@ function CabinetApp({ session, onLogout }) {
       setSaveStatus("saving");
       updateClientRemote(id, updated).then(() => {
         setSaveStatus("saved");
+        logActivity({
+          clientId: id,
+          portefeuilleId: updated.portefeuilleId || null,
+          type: "modification",
+          message: `Dossier ${updated.nom || id} modifié par ${me || "utilisateur"}`,
+          auteurId: myRow?.id || null,
+        });
         setTimeout(() => setSaveStatus("idle"), 1200);
       });
       return next;
     });
-  }, []);
+  }, [me, myRow?.id]);
 
   const addClient = useCallback((newClient) => {
     setClients((prev) => [...prev, newClient]);
@@ -1348,6 +1364,7 @@ function CabinetApp({ session, onLogout }) {
     setViewHistory((h) => (v === view ? h : [...h, view]));
     setView(v);
     setActiveClientTab(null);
+    if (v !== "clients") setCollabQuickFilter(null); // le filtre rapide ne doit vivre que sur la vue "clients"
   };
   const goBack = () => {
     if (activeClientTab) { setActiveClientTab(null); return; } // dans une fiche client → retour à la liste
@@ -1368,7 +1385,7 @@ function CabinetApp({ session, onLogout }) {
     <div style={S.appShell}>
       <GlobalStyle />
       <Sidebar view={view} setView={(v) => navTo(v)} me={me} meRole={myRole} mePortefeuille={myPortefeuille} team={team}
-        onLogout={onLogout} counts={{ ...computeCounts(myClients), tachesActives: visibleTasksDb.filter((t) => t.statut !== "termine").length + autoTasksForPage.length }}
+        onLogout={onLogout} counts={{ ...computeCounts(myClients), anomalies: detectAllAnomalies(myClients).length, tachesActives: visibleTasksDb.filter((t) => t.statut !== "termine").length + autoTasksForPage.length }}
         collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed}
         mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen} />
       <div style={S.main}>
@@ -1390,28 +1407,33 @@ function CabinetApp({ session, onLogout }) {
               onClose={() => closeClientTab(activeClient.id)} setView={navTo} />
           ) : (
             <>
+              {view === "pilotage" && <PilotageView clients={myClients} tasks={[...visibleTasksDb, ...autoTasksForPage]} team={visibleTeam} me={me} onOpenClient={openClientTab} onView={navTo} />}
               {view === "dashboard" && (
                 <Dashboard myClients={myClients} tasks={myTasks} me={me} meRole={myRole} team={visibleTeam}
-                  onOpenClient={(id) => { navTo("clients"); openClientTab(id); }} setView={navTo} />
+                  onOpenClient={(id) => { navTo("clients"); openClientTab(id); }} setView={navTo}
+                  onSuperviseClick={(collab) => { setCollabQuickFilter(collab); navTo("clients"); }} />
               )}
               {view === "clients" && (
                 <ClientsRegistry clients={myClients} allClients={clients} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter}
                   regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter} me={me}
+                  collabQuickFilter={collabQuickFilter} setCollabQuickFilter={setCollabQuickFilter}
                   selected={activeClientTab} setSelected={openClientTab} onAdd={() => setShowAddClient(true)}
                   onUpdate={updateClient} onImport={importClients} />
               )}
               {view === "tva" && <TvaGrid clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter}
-                regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter} me={me}
+                me={me}
                 onCycle={(id, mois, val) => {
                   const c = clients.find(x => x.id === id);
                   if (!c) return;
                   const previous = (c.tvaMois?.[mois] || "").toUpperCase();
                   updateClient(id, { tvaMois: { ...(c.tvaMois || {}), [mois]: val } });
-                  // Collaborateur passe la cellule à "Fait" -> notifie le chef de mission du dossier
-                  if (val === "FAIT" && c.chefMission && c.chefMission !== me) {
-                    const dest = team.find((t) => t.nom === c.chefMission);
-                    if (dest) insertNotificationRemote({
-                      id: `n-${Date.now()}`, destinataire_id: dest.id, expediteur_id: myRow?.id || null,
+                  // Collaborateur passe la cellule à "Fait" -> notification persistante au chef de mission.
+                  if (val === "FAIT" && previous !== "FAIT") {
+                    const dest = c.chefMission_id
+                      ? team.find((t) => t.id === c.chefMission_id)
+                      : (team.find((t) => t.nom === c.chefMission) || team.find((t) => t.role === "chef_mission" && (!c.portefeuilleId || t.portefeuille_id === c.portefeuilleId)));
+                    if (dest && dest.id !== myRow?.id) insertNotificationRemote({
+                      id: `n-${crypto?.randomUUID ? crypto.randomUUID() : Date.now()}`, destinataire_id: dest.id, expediteur_id: myRow?.id || null,
                       client_id: c.id, client_nom: c.nom, type: "tva_fait",
                       message: `${me} a préparé la TVA de ${mois} pour ${c.nom} — à vérifier.`,
                     });
@@ -1433,10 +1455,13 @@ function CabinetApp({ session, onLogout }) {
               {view === "revision" && (
   <RevisionView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} setView={navTo} />
 )}
+              {view === "surveillance" && <SurveillanceView clients={myClients} search={search} me={me} onOpenClient={openClientTab} />}
               {view === "mission" && <MissionView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "regimes" && <RegimeChangeView clients={myClients} me={me} search={search} onUpdate={updateClient} />}
               {view === "honoraires" && <HonorairesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} meId={myRow?.id} portefeuilleId={myPortefeuilleId} onUpdate={updateClient} />}
-{view === "social" && <CadreSocialView clients={myClients} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
+{view === "gestionnaire-paie" && <GestionnairePaieView clients={myClients} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
+              {view === "cotisations" && <CotisationsSocialesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
+              {view === "social" && <CadreSocialView clients={myClients} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "fiscal" && <SuiviFiscalView clients={myClients} team={team} />}
               {view === "resiliation" && <ResiliationsView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} meId={myRow?.id} portefeuilleId={myPortefeuilleId} onUpdate={updateClient} />}
 {view === "missionsExcep" && <MissionsExceptionnellesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} team={team} />}
@@ -1847,6 +1872,7 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
       id: "clients-accueil", label: "Gestion clients & accueil",
       items: [
         { id: "clients", label: "Registre clients", icon: Users, badge: counts.total },
+        { id: "pilotage", label: "Pilotage cabinet", icon: LayoutGrid },
         { id: "mission", label: "Dossiers en accueil", icon: ClipboardCheck, badge: counts.missionIncomplete, badgeTone: "amber" },
         { id: "regimes", label: "Changements de régime", icon: RefreshCw },
         { id: "honoraires", label: "Honoraires", icon: Wallet },
@@ -1858,7 +1884,8 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
     { id: "tva", label: "TVA (CA3 / CA12)", icon: Receipt, badge: counts.tvaAlert, badgeTone: "amber" },
     { id: "acomptes", label: "Impôts & cotisations", icon: Landmark },
     { id: "bilans", label: "Bilans", icon: FileWarning, badge: counts.bilanRetard, badgeTone: "red" },
-    { id: "revision", label: "Révision comptable", icon: Search },   // ← AJOUTÉ
+    { id: "revision", label: "Révision comptable", icon: Search },
+    { id: "surveillance", label: "À surveiller", icon: ShieldAlert, badge: counts.anomalies, badgeTone: "red" },
     { id: "fiscal", label: "Suivi fiscal", icon: CalendarDays },
   ],
 },
@@ -1883,8 +1910,10 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
   ],
 },
     {
-      id: "social", label: "Social",
+      id: "social", label: "Social & paie",
       items: [
+        { id: "gestionnaire-paie", label: "Gestionnaire de paie", icon: Contact },
+        { id: "cotisations", label: "Cotisations sociales", icon: Landmark },
         { id: "social", label: "Suivi social (OD salaires)", icon: UserCheck },
       ],
     },
@@ -2325,8 +2354,120 @@ function FilterBar({ roleFilter, setRoleFilter, count, regimeFilter, setRegimeFi
 /* ============================================================
    DASHBOARD
    ============================================================ */
-function Dashboard({ myClients, tasks, me, meRole, onOpenClient, setView, team }) {
+
+/* ============================================================
+   PILOTAGE CABINET — vue chef de mission : risques, demandes,
+   validations, charge et rentabilité.
+   ============================================================ */
+function PilotageView({ clients, tasks, team, me, onOpenClient, onView }) {
+  const active = clients.filter((c) => c.statutDossier !== "inactif");
+  const anomalies = useMemo(() => detectAllAnomalies(active), [active]);
+  const requests = active.flatMap((c) => (c.demandesClient || []).map((r) => ({ ...r, clientId: c.id, clientNom: c.nom }))).filter((r) => r.statut !== "controle");
+  const validations = active.filter((c) => c.validationDossier?.collaborateur && !c.validationDossier?.chefMission);
+  const relances = requests.filter((r) => r.relanceLe && new Date(r.relanceLe) <= new Date());
+  const workload = useMemo(() => team.map((m) => {
+    const dossiers = active.filter((c) => c.collab === m.nom).length;
+    const taches = (tasks || []).filter((t) => t.assignee_id === m.id || t.assignee === m.nom || t.collaborateur === m.nom).filter((t) => t.statut !== "termine").length;
+    return { ...m, dossiers, taches };
+  }).sort((a,b) => (b.taches + b.dossiers) - (a.taches + a.dossiers)), [team, active, tasks]);
+  const rentabilite = active.filter((c) => Number(c.rentabilite?.tempsPrevu) > 0 && Number(c.rentabilite?.tempsReel) > Number(c.rentabilite?.tempsPrevu) * 1.25);
+  const critical = anomalies.filter((a) => a.gravite === "haute");
+  return <div>
+    <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Pilotage cabinet</h1></Reveal>
+    <p style={{ color: T.inkMuted, fontSize: 12.5, margin: "0 0 18px" }}>Le cockpit du chef de mission : ce qui nécessite une action, une relance ou une validation.</p>
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-3" style={{ marginBottom: 18 }}>
+      <KpiCard label="Priorités" value={critical.length} icon={ShieldAlert} tone={critical.length ? "red" : "green"} onClick={() => onView("surveillance")} />
+      <KpiCard label="Pièces à relancer" value={relances.length} icon={Mail} tone={relances.length ? "amber" : "green"} />
+      <KpiCard label="À valider CDM" value={validations.length} icon={Check} tone={validations.length ? "amber" : "green"} />
+      <KpiCard label="Dossiers à risque" value={rentabilite.length} icon={Clock3} tone={rentabilite.length ? "amber" : "green"} />
+      <KpiCard label="Dossiers actifs" value={active.length} icon={Users} tone="neutral" onClick={() => onView("clients")} />
+    </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <Panel title="Actions prioritaires" right={<Stamped tone={critical.length ? "red" : "green"} small>{critical.length}</Stamped>}>
+        {critical.slice(0,7).map(a => <div key={a.id} className="hoverRow clickable" onClick={() => onOpenClient(a.clientId)} style={{display:"flex",gap:9,alignItems:"center",padding:"9px 5px",borderBottom:`1px solid ${T.line}`}}><span style={{width:7,height:7,borderRadius:9,background:T.red}}/><div style={{flex:1}}><div style={{fontWeight:700,fontSize:11.5}}>{a.clientNom}</div><div style={{fontSize:10.5,color:T.inkMuted}}>{a.message}</div></div><Stamped tone="red" small>Prioritaire</Stamped></div>)}
+        {!critical.length && <EmptyNote text="Aucune priorité critique." />}
+      </Panel>
+      <Panel title="Pièces et relances" right={<Stamped tone={relances.length ? "amber" : "green"} small>{relances.length}</Stamped>}>
+        {relances.slice(0,7).map(r => <div key={`${r.clientId}-${r.id}`} className="hoverRow clickable" onClick={() => onOpenClient(r.clientId)} style={{display:"flex",gap:9,alignItems:"center",padding:"9px 5px",borderBottom:`1px solid ${T.line}`}}><Mail size={13} color={T.amber}/><div style={{flex:1}}><div style={{fontWeight:700,fontSize:11.5}}>{r.clientNom}</div><div style={{fontSize:10.5,color:T.inkMuted}}>{r.libelle || "Pièce demandée"}</div></div><Stamped tone="amber" small>Relancer</Stamped></div>)}
+        {!relances.length && <EmptyNote text="Aucune relance à effectuer." />}
+      </Panel>
+      <Panel title="Validations chef de mission" right={<Stamped tone={validations.length ? "amber" : "green"} small>{validations.length}</Stamped>}>
+        {validations.slice(0,7).map(c => <div key={c.id} className="hoverRow clickable" onClick={() => onOpenClient(c.id)} style={{display:"flex",gap:9,alignItems:"center",padding:"9px 5px",borderBottom:`1px solid ${T.line}`}}><Check size={13} color={T.amber}/><div style={{flex:1}}><div style={{fontWeight:700,fontSize:11.5}}>{c.nom}</div><div style={{fontSize:10.5,color:T.inkMuted}}>Le collaborateur a terminé sa partie</div></div><Stamped tone="amber" small>À valider</Stamped></div>)}
+        {!validations.length && <EmptyNote text="Aucun dossier en attente de validation." />}
+      </Panel>
+      <Panel title="Charge de l'équipe">
+        {workload.slice(0,8).map(m => <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 4px",borderBottom:`1px solid ${T.line}`}}><div style={{width:30,height:30,borderRadius:9,background:m.color||T.navySoft,color:m.color?"#fff":T.navy,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800}}>{(m.nom||"?").slice(0,2).toUpperCase()}</div><div style={{flex:1}}><div style={{fontWeight:700,fontSize:11.5}}>{m.nom}</div><div style={{fontSize:10.5,color:T.inkMuted}}>{m.dossiers} dossier{m.dossiers>1?"s":""} · {m.taches} tâche{m.taches>1?"s":""} active{m.taches>1?"s":""}</div></div><Stamped tone={m.taches>12?"red":m.taches>7?"amber":"green"} small>{m.taches>12?"Surchargé":m.taches>7?"À surveiller":"OK"}</Stamped></div>)}
+        {!workload.length && <EmptyNote text="Aucune donnée d'équipe." />}
+      </Panel>
+    </div>
+    <div style={{height:16}} />
+    <Panel title="Dossiers dont le temps réel dépasse le prévu">
+      {rentabilite.slice(0,8).map(c => <div key={c.id} className="hoverRow clickable" onClick={() => onOpenClient(c.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 5px",borderBottom:`1px solid ${T.line}`}}><Clock3 size={13} color={T.amber}/><div style={{flex:1}}><div style={{fontWeight:700,fontSize:11.5}}>{c.nom}</div><div style={{fontSize:10.5,color:T.inkMuted}}>Prévu {c.rentabilite.tempsPrevu} h · Réel {c.rentabilite.tempsReel} h</div></div><Stamped tone="amber" small>Rentabilité</Stamped></div>)}
+      {!rentabilite.length && <EmptyNote text="Aucun dossier ne dépasse actuellement le seuil de 25 %." />}
+    </Panel>
+  </div>;
+}
+
+/* ============================================================
+   DEMANDES CLIENT / PIÈCES — suivi simple sans imposer de GED.
+   ============================================================ */
+function DemandesPiecesTab({ client, onUpdate }) {
+  const [label, setLabel] = useState("");
+  const [relanceLe, setRelanceLe] = useState("");
+  const demandes = client.demandesClient || [];
+  const add = () => {
+    if (!label.trim()) return;
+    const item = { id: uid(), libelle: label.trim(), demandeLe: todayISO(), relanceLe: relanceLe || "", statut: "demande", note: "" };
+    onUpdate(client.id, { demandesClient: [...demandes, item] }); setLabel(""); setRelanceLe("");
+  };
+  const patch = (id, patch) => onUpdate(client.id, { demandesClient: demandes.map(d => d.id === id ? { ...d, ...patch } : d) });
+  const remove = (id) => onUpdate(client.id, { demandesClient: demandes.filter(d => d.id !== id) });
+  const counts = { demande: demandes.filter(d=>d.statut==="demande").length, recu: demandes.filter(d=>d.statut==="recu").length, controle: demandes.filter(d=>d.statut==="controle").length };
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h4 style={{fontFamily:T.serif,fontSize:13,color:T.navy,margin:0}}>Demandes clients & pièces</h4><div style={{display:"flex",gap:5}}><Stamped tone={counts.demande?"amber":"green"} small>{counts.demande} demandée{counts.demande>1?"s":""}</Stamped><Stamped tone="green" small>{counts.recu} reçue{counts.recu>1?"s":""}</Stamped></div></div>
+    <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:16}}><input value={label} onChange={e=>setLabel(e.target.value)} placeholder="Ex. Relevé bancaire de juillet" style={{padding:"6px 8px",borderRadius:8,border:`1px solid ${T.line}`,fontSize:11.5,width:250}}/><input type="date" value={relanceLe} onChange={e=>setRelanceLe(e.target.value)} style={{padding:"6px 8px",borderRadius:8,border:`1px solid ${T.line}`,fontSize:11.5}}/><button onClick={add} style={{border:"none",background:T.navy,color:"white",borderRadius:8,padding:"7px 11px",fontSize:11.5,fontWeight:700,cursor:"pointer"}}><Plus size={13} style={{verticalAlign:"-2px"}}/> Demander</button></div>
+    {!demandes.length ? <EmptyNote text="Aucune pièce demandée. Ajoute ici les éléments attendus du client."/> : <div style={{display:"flex",flexDirection:"column",gap:7}}>{demandes.map(d=><div key={d.id} style={{border:`1px solid ${T.line}`,borderRadius:T.radiusSm,padding:"9px 10px",background:T.paper}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{flex:1,fontWeight:700,fontSize:11.5}}>{d.libelle}</div><SelectPill value={d.statut} options={["demande","recu","controle"]} onChange={v=>patch(d.id,{statut:v})}/><button onClick={()=>remove(d.id)} style={{border:"none",background:"none",color:T.inkMuted,cursor:"pointer"}}><Trash2 size={13}/></button></div><div style={{fontSize:10.5,color:T.inkMuted,marginTop:5}}>Demandé le {fmtFR(d.demandeLe)}{d.relanceLe?` · Relance ${fmtFR(d.relanceLe)}`:""}</div></div>)}</div>}
+  </div>;
+}
+
+
+function RentabiliteTab({ client, onUpdate }) {
+  const r = client.rentabilite || { tempsPrevu:"", tempsReel:"", tarifHoraire:"", margeCible:"" };
+  const patch = (p) => onUpdate(client.id, { rentabilite: { ...r, ...p } });
+  const prev = Number(r.tempsPrevu), real = Number(r.tempsReel), rate = Number(r.tarifHoraire);
+  const depassement = prev > 0 && real > prev ? ((real - prev) / prev) * 100 : 0;
+  const ca = real > 0 && rate > 0 ? real * rate : 0;
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h4 style={{fontFamily:T.serif,fontSize:13,color:T.navy,margin:0}}>Temps & rentabilité du dossier</h4><Stamped tone={depassement>25?"red":depassement>0?"amber":"green"} small>{depassement>0?`+${depassement.toFixed(0)} % vs prévu`:"Dans le prévu"}</Stamped></div>
+    <FieldRow label="Temps prévu (h)"><TextInput defaultValue={r.tempsPrevu} onCommit={v=>patch({tempsPrevu:v})} placeholder="ex. 12" width={120}/></FieldRow>
+    <FieldRow label="Temps réel (h)"><TextInput defaultValue={r.tempsReel} onCommit={v=>patch({tempsReel:v})} placeholder="ex. 14,5" width={120}/></FieldRow>
+    <FieldRow label="Taux horaire (€)"><TextInput defaultValue={r.tarifHoraire} onCommit={v=>patch({tarifHoraire:v})} placeholder="ex. 85" width={120}/></FieldRow>
+    <FieldRow label="Marge cible (%)"><TextInput defaultValue={r.margeCible} onCommit={v=>patch({margeCible:v})} placeholder="ex. 35" width={120}/></FieldRow>
+    <div className="grid grid-cols-2 gap-2.5" style={{marginTop:16}}>
+      <div style={{border:`1px solid ${T.line}`,borderRadius:T.radiusSm,padding:"10px 11px",background:T.paper}}><div style={{fontSize:9.5,color:T.inkMuted,textTransform:"uppercase",fontWeight:700}}>Heures</div><div style={{fontSize:17,fontWeight:800,fontFamily:T.mono,marginTop:3}}>{real||0} / {prev||0}</div></div>
+      <div style={{border:`1px solid ${T.line}`,borderRadius:T.radiusSm,padding:"10px 11px",background:T.paper}}><div style={{fontSize:9.5,color:T.inkMuted,textTransform:"uppercase",fontWeight:700}}>Valorisation</div><div style={{fontSize:17,fontWeight:800,fontFamily:T.mono,marginTop:3}}>{ca?fmtEUR(ca):"—"}</div></div>
+    </div>
+  </div>;
+}
+
+function ValidationDossierTab({ client, onUpdate, me }) {
+  const v = client.validationDossier || { collaborateur:false, chefMission:false, dateCollaborateur:"", dateChefMission:"", commentaire:"" };
+  const complete = !!v.collaborateur && !!v.chefMission;
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h4 style={{fontFamily:T.serif,fontSize:13,color:T.navy,margin:0}}>Validation de fin de dossier</h4><Stamped tone={complete?"green":"amber"} small>{complete?"Dossier validé":"Validation en attente"}</Stamped></div>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 11px",border:`1px solid ${T.line}`,borderRadius:T.radiusSm}}><ToggleBtn on={!!v.collaborateur} onClick={()=>onUpdate(client.id,{validationDossier:{...v,collaborateur:!v.collaborateur,dateCollaborateur:!v.collaborateur?todayISO():v.dateCollaborateur}})}/><div><div style={{fontWeight:700,fontSize:11.5}}>Collaborateur — dossier terminé</div><div style={{fontSize:10.5,color:T.inkMuted}}>{v.dateCollaborateur?`Le ${fmtFR(v.dateCollaborateur)}`:"Non validé"}</div></div></div>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 11px",border:`1px solid ${T.line}`,borderRadius:T.radiusSm}}><ToggleBtn on={!!v.chefMission} onClick={()=>onUpdate(client.id,{validationDossier:{...v,chefMission:!v.chefMission,dateChefMission:!v.chefMission?todayISO():v.dateChefMission}})}/><div><div style={{fontWeight:700,fontSize:11.5}}>Chef de mission — validation finale</div><div style={{fontSize:10.5,color:T.inkMuted}}>{v.dateChefMission?`Validé le ${fmtFR(v.dateChefMission)} par ${me||"le CDM"}`:"À valider"}</div></div></div>
+      <FieldRow label="Commentaire"><TextInput defaultValue={v.commentaire} onCommit={x=>onUpdate(client.id,{validationDossier:{...v,commentaire:x}})} placeholder="Réserve ou remarque de clôture" width={360}/></FieldRow>
+    </div>
+  </div>;
+}
+
+function Dashboard({ myClients, tasks, me, meRole, onOpenClient, setView, team, onSuperviseClick }) {
   const counts = computeCounts(myClients);
+  const anomalies = useMemo(() => detectAllAnomalies(myClients), [myClients]);
+  const criticalAnomalies = anomalies.filter((a) => a.gravite === "haute");
+  const importantAnomalies = anomalies.filter((a) => a.gravite !== "haute");
   const [taskFilter, setTaskFilter] = useState("Toutes");
   const buckets = ["retard", "aujourdhui", "demain", "semaine", "mois", "trimestre"];
   const filteredTasks = taskFilter === "Toutes" ? tasks.filter(t => buckets.includes(t.bucket)) : tasks.filter((t) => t.bucket === taskFilter);
@@ -2400,6 +2541,27 @@ function Dashboard({ myClients, tasks, me, meRole, onOpenClient, setView, team }
         <KpiCard index={1} label="TVA en retard ce mois" value={counts.tvaAlert} icon={Receipt} tone={counts.tvaAlert ? "amber" : "green"} onClick={() => setView("tva")} linkLabel="Voir les tâches" />
         <KpiCard index={2} label="Bilans en retard" value={counts.bilanRetard} icon={FileWarning} tone={counts.bilanRetard ? "red" : "green"} onClick={() => setView("bilans")} linkLabel="Voir les bilans" />
         <KpiCard index={3} label="Accueils incomplets" value={counts.missionIncomplete} icon={ClipboardCheck} tone={counts.missionIncomplete ? "amber" : "green"} onClick={() => setView("mission")} linkLabel="Voir les dossiers" />
+      </div>
+
+      <div style={{ marginBottom: 18 }}>
+        <Panel index={4} title="À surveiller" right={
+          <button onClick={() => setView("surveillance")} style={{ background: "none", border: "none", cursor: "pointer", color: T.navy, fontWeight: 600, fontSize: 11.5 }}>
+            Voir tout <ArrowUpRight size={12} style={{ verticalAlign: "middle" }} />
+          </button>
+        }>
+          {anomalies.length === 0 ? <EmptyNote text="Aucune anomalie détectée. Tous les contrôles connus sont au vert." /> : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {anomalies.slice(0, 7).map((a) => (
+                <div key={a.id} className="hoverRow clickable" onClick={() => onOpenClient(a.clientId)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", borderRadius: T.radiusSm, border: `1px solid ${T.line}`, background: T.paper }}>
+                  <span style={{ width: 7, height: 7, borderRadius: 99, background: a.gravite === "haute" ? T.red : T.amber, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 11.5 }}>{a.clientNom}</div><div style={{ fontSize: 10.5, color: T.inkMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.message}</div></div>
+                  <Stamped tone={a.gravite === "haute" ? "red" : "amber"} small>{a.gravite === "haute" ? "Important" : "À vérifier"}</Stamped>
+                </div>
+              ))}
+              {anomalies.length > 7 && <div style={{ fontSize: 10.5, color: T.inkMuted }}>{anomalies.length} anomalies au total · {criticalAnomalies.length} importantes · {importantAnomalies.length} à vérifier</div>}
+            </div>
+          )}
+        </Panel>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[1.3fr_1fr] gap-4 md:gap-[18px]">
@@ -2518,7 +2680,7 @@ function Dashboard({ myClients, tasks, me, meRole, onOpenClient, setView, team }
           <Panel index={8} title="Supervision d'équipe">
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {Object.entries(byCollab).map(([collab, s]) => (
-                <div key={collab} className="hoverRow clickable" onClick={() => setView("clients")}
+                <div key={collab} className="hoverRow clickable" onClick={() => onSuperviseClick && onSuperviseClick(collab)}
                   style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: T.radiusSm, border: `1px solid ${T.line}`, background: T.paper }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 12.5, color: T.ink }}>{collab}</div>
@@ -2605,9 +2767,15 @@ function EmptyNote({ text }) { return <div className="px-1 py-4 text-inkmuted te
 /* ============================================================
    CLIENTS REGISTRY
    ============================================================ */
-function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, setRoleFilter, regimeFilter, setRegimeFilter, me, selected, setSelected, onAdd, onUpdate, onImport }) {
+function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, setRoleFilter, regimeFilter, setRegimeFilter, me, collabQuickFilter, setCollabQuickFilter, selected, setSelected, onAdd, onUpdate, onImport }) {
   const [statutFilter, setStatutFilter] = useState("actif");
-  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me, regimeFilter, statutFilter), [clients, search, roleFilter, me, regimeFilter, statutFilter]);
+  const baseFiltered = useMemo(() => filterClients(clients, search, roleFilter, me, regimeFilter, statutFilter), [clients, search, roleFilter, me, regimeFilter, statutFilter]);
+  // Filtre rapide posé en cliquant un collaborateur dans "Supervision d'équipe" du dashboard :
+  // ne montre que les dossiers de CE collaborateur, sous la supervision de l'utilisateur courant (chef de mission).
+  const filtered = useMemo(() => {
+    if (!collabQuickFilter) return baseFiltered;
+    return baseFiltered.filter((c) => c.chefMission === me && (collabQuickFilter === "Non assigné" ? !c.collab : c.collab === collabQuickFilter));
+  }, [baseFiltered, collabQuickFilter, me]);
   const grouped = useMemo(() => {
     const g = {};
     [...filtered].sort((a, b) => a.nom.localeCompare(b.nom)).forEach((c) => {
@@ -2661,10 +2829,20 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
             </button>
           </div>
         </div>
-        {importMsg && (
-          <div className={`mt-2 text-xs font-semibold px-2.5 py-1.5 rounded-lg inline-block ${importMsg.tone === "green" ? "bg-badge-green-bg text-badge-green-text" : importMsg.tone === "red" ? "bg-badge-red-bg text-badge-red-text" : "bg-badge-amber-bg text-badge-amber-text"}`}>{importMsg.text}</div>
+        {collabQuickFilter && (
+          <div className="flex items-center gap-2 mb-2">
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: T.navy, background: T.navySoft, padding: "4px 10px 4px 12px", borderRadius: 999 }}>
+              Dossiers de {collabQuickFilter}
+              <button onClick={() => setCollabQuickFilter && setCollabQuickFilter(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.navy, display: "flex", alignItems: "center", padding: 0 }}>
+                <X size={13} />
+              </button>
+            </span>
+          </div>
         )}
       </Reveal>
+      {importMsg && (
+          <div className={`mt-2 text-xs font-semibold px-2.5 py-1.5 rounded-lg inline-block ${importMsg.tone === "green" ? "bg-badge-green-bg text-badge-green-text" : importMsg.tone === "red" ? "bg-badge-red-bg text-badge-red-text" : "bg-badge-amber-bg text-badge-amber-text"}`}>{importMsg.text}</div>
+        )}
       <p className="text-inkmuted text-xs mt-1.5 mb-5">Cliquez un dossier pour ouvrir sa fiche complète.</p>
       <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter}
         statutFilter={statutFilter} setStatutFilter={setStatutFilter} search={search} setSearch={setSearch} />
@@ -2783,9 +2961,13 @@ function ClientEditorPage({ client, team, me, meId, portefeuilleId, onUpdate, on
   };
   if (!client) return null;
   const tabs = [
-    { id: "infos", label: "Infos générales" }, { id: "corporate", label: "Corporate" }, { id: "tva", label: "TVA" },
+    { id: "infos", label: "Infos générales" }, { id: "contact", label: "Fiche contact" }, { id: "corporate", label: "Corporate" }, { id: "tva", label: "TVA" },
     { id: "bilan", label: "Bilan" }, { id: "acomptes", label: "Acomptes" }, { id: "age", label: "AGE / AGO" },
     { id: "formeJuridique", label: "Forme juridique" }, { id: "revision", label: "Révision" }, { id: "mission", label: "Intégration" },
+    { id: "acces", label: "Accès & codes" },
+    { id: "suivi", label: "Demandes & pièces" },
+    { id: "rentabilite", label: "Temps & rentabilité" },
+    { id: "validation", label: "Validation" },
     { id: "notes", label: "Notes" }, { id: "historique", label: "Historique" },
   ];
   return (
@@ -2802,6 +2984,8 @@ function ClientEditorPage({ client, team, me, meId, portefeuilleId, onUpdate, on
               <RoleBadge role="Expert" name={client.expert} />
               <RoleBadge role="Chef de mission" name={client.chefMission} />
               {client.tvaRegime && <span style={{ fontFamily: T.mono, fontSize: 11, color: T.navy, fontWeight: 700, background: T.navySoft, padding: "2px 9px", borderRadius: 999 }}>{client.tvaRegime}{client.tvaRegime === "CA3" && client.tvaPeriodicite ? ` · ${TVA_PERIODICITE_LABELS[client.tvaPeriodicite]}` : ""}</span>}
+              {client.regimeFiscal && <span style={{ fontFamily: T.mono, fontSize: 11, color: T.inkSoft, fontWeight: 700, background: T.paperDeep, padding: "2px 9px", borderRadius: 999 }}>{client.regimeFiscal}</span>}
+              {client.tvaExig && <span style={{ fontFamily: T.mono, fontSize: 11, color: T.inkSoft, fontWeight: 700, background: T.paper, padding: "2px 9px", borderRadius: 999 }}>Exig. {client.tvaExig}</span>}
               {client.statutDossier === "transfert" ? (
                 <span title="Résiliation ou reprise en cours — se termine automatiquement depuis l'onglet concerné"
                   style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, padding: "3px 10px 3px 8px", borderRadius: 999, background: T.amberSoft, color: T.amber }}>
@@ -2854,6 +3038,7 @@ function ClientEditorPage({ client, team, me, meId, portefeuilleId, onUpdate, on
       </div>
       <div style={{ maxWidth: 720, background: T.card, border: `1px solid ${T.line}`, borderRadius: T.radius, padding: "22px 24px", boxShadow: T.shadowSm }}>
         {tab === "infos" && <InfosTab client={draft} team={team} onUpdate={patchDraft} setView={setView} />}
+        {tab === "contact" && <ContactTab client={draft} onUpdate={patchDraft} />}
         {tab === "corporate" && <CorporateTab client={draft} onUpdate={patchDraft} />}
         {tab === "tva" && <TvaTab client={draft} onUpdate={patchDraft} />}
         {tab === "bilan" && <BilanTab client={draft} onUpdate={patchDraft} />}
@@ -2862,12 +3047,126 @@ function ClientEditorPage({ client, team, me, meId, portefeuilleId, onUpdate, on
         {tab === "formeJuridique" && <FormeJuridiqueEditor client={draft} onUpdate={patchDraft} />}
 {tab === "revision" && <RevisionTab client={draft} onUpdate={patchDraft} setView={setView} />}
         {tab === "mission" && <MissionTab client={draft} onUpdate={patchDraft} />}
+        {tab === "acces" && <AccesTab client={draft} onUpdate={patchDraft} />}
+        {tab === "suivi" && <DemandesPiecesTab client={draft} onUpdate={patchDraft} />}
+        {tab === "rentabilite" && <RentabiliteTab client={draft} onUpdate={patchDraft} />}
+        {tab === "validation" && <ValidationDossierTab client={draft} onUpdate={patchDraft} me={me} />}
         {tab === "notes" && <NotesTab client={client} me={me} meId={meId} portefeuilleId={portefeuilleId} onUpdate={onUpdate} />}
         {tab === "historique" && <HistoriqueTab clientId={client.id} team={team} />}
       </div>
     </div>
   );
 }
+/* ============================================================
+   ACCÈS & CODES — identifiants et mots de passe sensibles du
+   dossier, classés par catégorie. Stocké dans client.acces =
+   { banques: [], comptesFournisseurs: [], caisse: [], netEntreprise: [], autres: [] }
+   chaque entrée : { id, libelle, identifiant, motDePasse, note }
+   ============================================================ */
+const ACCES_CATEGORIES = [
+  { key: "banques", label: "Banque(s)", icon: Landmark, placeholder: "ex. BNP Paribas — compte courant" },
+  { key: "comptesFournisseurs", label: "Comptes fournisseurs", icon: Briefcase, placeholder: "ex. Portail EDF Pro" },
+  { key: "caisse", label: "Caisse / plateforme de facturation", icon: Wallet, placeholder: "ex. Logiciel de caisse Zettle" },
+  { key: "netEntreprise", label: "Net-entreprise", icon: ShieldCheck, placeholder: "ex. Net-entreprise.fr" },
+  { key: "autres", label: "Autres accès", icon: KeyRound, placeholder: "ex. Portail impots.gouv.fr" },
+];
+function uid() { return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
+
+function AccesPasswordField({ value, onCommit }) {
+  const [visible, setVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value || "");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch { /* clipboard indisponible — on ignore silencieusement */ }
+  };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <input
+        type={visible ? "text" : "password"}
+        defaultValue={value}
+        onBlur={(e) => onCommit(e.target.value)}
+        placeholder="Mot de passe"
+        style={{ fontFamily: T.mono, fontSize: 12, padding: "5px 8px", borderRadius: 8, border: `1px solid ${T.line}`, width: 140, background: T.card }}
+      />
+      <button type="button" onClick={() => setVisible((v) => !v)} title={visible ? "Masquer" : "Afficher"}
+        style={{ background: "none", border: `1px solid ${T.line}`, borderRadius: 7, padding: 5, cursor: "pointer", color: T.inkMuted, display: "flex" }}>
+        {visible ? <EyeOff size={13} /> : <Eye size={13} />}
+      </button>
+      <button type="button" onClick={copy} title="Copier le mot de passe"
+        style={{ background: "none", border: `1px solid ${T.line}`, borderRadius: 7, padding: 5, cursor: "pointer", color: copied ? T.green : T.inkMuted, display: "flex" }}>
+        <Copy size={13} />
+      </button>
+      {copied && <span style={{ fontSize: 10.5, color: T.green, fontWeight: 700 }}>Copié !</span>}
+    </div>
+  );
+}
+
+function AccesEntryRow({ entry, onChange, onRemove }) {
+  const patch = (f) => onChange({ ...entry, ...f });
+  return (
+    <div style={{ border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 12px", marginBottom: 8, background: T.paper }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <input defaultValue={entry.libelle} placeholder="Libellé (ex. BNP Paribas — compte courant)" onBlur={(e) => patch({ libelle: e.target.value })}
+          style={{ flex: "1 1 200px", fontSize: 12.5, fontWeight: 600, padding: "6px 9px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card }} />
+        <button type="button" onClick={onRemove} title="Supprimer cet accès"
+          style={{ background: "none", border: "none", cursor: "pointer", color: T.inkMuted, display: "flex", flexShrink: 0 }}>
+          <Trash2 size={14} />
+        </button>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <input defaultValue={entry.identifiant} placeholder="Identifiant" onBlur={(e) => patch({ identifiant: e.target.value })}
+          style={{ fontSize: 12, padding: "5px 8px", borderRadius: 8, border: `1px solid ${T.line}`, width: 150, background: T.card }} />
+        <AccesPasswordField value={entry.motDePasse} onCommit={(v) => patch({ motDePasse: v })} />
+      </div>
+      <textarea defaultValue={entry.note} placeholder="Note libre (URL, RIB, digicode…)" onBlur={(e) => patch({ note: e.target.value })}
+        rows={2} style={{ width: "100%", marginTop: 8, fontSize: 12, padding: "6px 9px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card, resize: "vertical", fontFamily: T.sans }} />
+    </div>
+  );
+}
+
+function AccesCategoryPanel({ category, entries, onUpdate }) {
+  const Icon = category.icon;
+  const list = entries || [];
+  const setList = (next) => onUpdate(next);
+  const addEntry = () => setList([...list, { id: uid(), libelle: "", identifiant: "", motDePasse: "", note: "" }]);
+  const updateEntry = (id, next) => setList(list.map((e) => (e.id === id ? next : e)));
+  const removeEntry = (id) => {
+    if (!confirm("Supprimer cet accès ?")) return;
+    setList(list.filter((e) => e.id !== id));
+  };
+  return (
+    <Panel title={`${category.label} (${list.length})`}>
+      {list.length === 0 && <EmptyNote text="Aucun accès enregistré dans cette catégorie." />}
+      {list.map((e) => <AccesEntryRow key={e.id} entry={e} onChange={(next) => updateEntry(e.id, next)} onRemove={() => removeEntry(e.id)} />)}
+      <button type="button" onClick={addEntry} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, background: "none", border: `1px dashed ${T.line}`, borderRadius: 9, padding: "7px 12px", fontSize: 12, color: T.navy, cursor: "pointer" }}>
+        <Plus size={13} /> Ajouter {category.placeholder ? `(${category.placeholder})` : "un accès"}
+      </button>
+    </Panel>
+  );
+}
+
+function AccesTab({ client, onUpdate }) {
+  const acces = client.acces || {};
+  const patchCategory = (key, list) => onUpdate(client.id, { acces: { ...acces, [key]: list } });
+  return (
+    <div>
+      <div style={{ fontSize: 11.5, color: T.inkMuted, background: T.navySoft, padding: "8px 12px", borderRadius: 9, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+        <KeyRound size={14} color={T.navy} style={{ flexShrink: 0 }} />
+        Ces informations sont sensibles : elles ne sont visibles que par les collaborateurs ayant accès à ce dossier. Pensez à changer les mots de passe partagés régulièrement.
+      </div>
+      {ACCES_CATEGORIES.map((cat, i) => (
+        <div key={cat.key}>
+          <AccesCategoryPanel category={cat} entries={acces[cat.key]} onUpdate={(list) => patchCategory(cat.key, list)} />
+          {i < ACCES_CATEGORIES.length - 1 && <div style={{ height: 14 }} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function SocialTab({ client, onUpdate }) {
   const s = client.social || {};
   const patch = (f) => onUpdate(client.id, { social: { ...s, ...f } });
@@ -2885,6 +3184,7 @@ function SocialTab({ client, onUpdate }) {
       </FieldRow>
       <FieldRow label="Cabinet de paie"><TextInput defaultValue={s.cabinetPaie} onCommit={(v) => patch({ cabinetPaie: v })} width={160} align="left" /></FieldRow>
       <FieldRow label="Contact gestionnaire — nom"><TextInput defaultValue={s.gestionnaireNom} onCommit={(v) => patch({ gestionnaireNom: v })} width={160} align="left" /></FieldRow>
+      <FieldRow label="Contact gestionnaire — adresse"><TextInput defaultValue={s.gestionnaireAdresse} onCommit={(v) => patch({ gestionnaireAdresse: v })} width={220} align="left" /></FieldRow>
       <FieldRow label="Contact gestionnaire — email"><TextInput defaultValue={s.gestionnaireEmail} onCommit={(v) => patch({ gestionnaireEmail: v })} width={180} align="left" /></FieldRow>
       <FieldRow label="Contact gestionnaire — tél."><TextInput defaultValue={s.gestionnaireTel} onCommit={(v) => patch({ gestionnaireTel: v })} width={140} align="left" /></FieldRow>
       <FieldRow label="Convention collective"><TextInput defaultValue={s.conventionCollective} onCommit={(v) => patch({ conventionCollective: v })} width={180} align="left" /></FieldRow>
@@ -2941,6 +3241,7 @@ function InfosTab({ client, team, onUpdate, setView }) {
         </div>
       </FieldRow>
       <FieldRow label="Forme juridique"><SelectPill value={client.formeJuridique} options={["EI", "EURL", "SARL", "SAS", "SASU", "SCI", "SCM", "SELARL", "SA", "SNC", "Association"]} onChange={(v) => onUpdate(client.id, { formeJuridique: v })} /></FieldRow>
+      <FieldRow label="Régime fiscal"><SelectPill value={client.regimeFiscal} options={["IS", "IR"]} labels={{ IS: "IS — Impôt sur les sociétés", IR: "IR — Impôt sur le revenu" }} onChange={(v) => onUpdate(client.id, { regimeFiscal: v })} /></FieldRow>
       <FieldRow label="Capital social"><TextInput defaultValue={client.capital} onCommit={(v) => onUpdate(client.id, { capital: v })} placeholder="ex. 5 000 €" width={140} /></FieldRow>
       <FieldRow label="Activité">
         <TextInput
@@ -2975,8 +3276,29 @@ function InfosTab({ client, team, onUpdate, setView }) {
       <div style={{ height: 6 }} />
       <FieldRow label="Collaborateur"><SelectPill value={client.collab} options={teamNames} onChange={(v) => onUpdate(client.id, { collab: v })} /></FieldRow>
       <FieldRow label="Expert"><SelectPill value={client.expert} options={teamNames} onChange={(v) => onUpdate(client.id, { expert: v })} /></FieldRow>
-      <FieldRow label="Chef de mission"><SelectPill value={client.chefMission} options={teamNames} onChange={(v) => onUpdate(client.id, { chefMission: v })} /></FieldRow>
+      <FieldRow label="Chef de mission"><SelectPill value={client.chefMission} options={teamNames} onChange={(v) => {
+        const chef = team.find((t) => t.nom === v);
+        onUpdate(client.id, { chefMission: v, chefMission_id: chef?.id || "" });
+      }} /></FieldRow>
       <FieldRow label="Régime TVA"><SelectPill value={client.tvaRegime} options={REGIMES_TVA} onChange={(v) => onUpdate(client.id, { tvaRegime: v })} /></FieldRow>
+    </div>
+  );
+}
+
+function ContactTab({ client, onUpdate }) {
+  const contact = client.contact || {};
+  const patch = (field, value) => onUpdate(client.id, { contact: { ...contact, [field]: value } });
+  return (
+    <div>
+      <Panel title="Coordonnées du client">
+        <FieldRow label="Nom du contact"><TextInput defaultValue={contact.contactNom} onCommit={(v) => patch("contactNom", v)} placeholder="Nom et prénom" width={220} align="left" /></FieldRow>
+        <FieldRow label="Fonction"><TextInput defaultValue={contact.contactFonction} onCommit={(v) => patch("contactFonction", v)} placeholder="Dirigeant, comptable…" width={220} align="left" /></FieldRow>
+        <FieldRow label="Téléphone"><TextInput defaultValue={contact.telephone} onCommit={(v) => patch("telephone", v)} placeholder="06 00 00 00 00" width={180} /></FieldRow>
+        <FieldRow label="E-mail"><TextInput defaultValue={contact.email} onCommit={(v) => patch("email", v)} placeholder="contact@societe.fr" width={240} align="left" /></FieldRow>
+        <FieldRow label="Adresse"><TextInput defaultValue={contact.adresse} onCommit={(v) => patch("adresse", v)} placeholder="Numéro et rue" width={280} align="left" /></FieldRow>
+        <FieldRow label="Code postal"><TextInput defaultValue={contact.codePostal} onCommit={(v) => patch("codePostal", v)} placeholder="75000" width={100} /></FieldRow>
+        <FieldRow label="Ville"><TextInput defaultValue={contact.ville} onCommit={(v) => patch("ville", v)} placeholder="Paris" width={180} align="left" /></FieldRow>
+      </Panel>
     </div>
   );
 }
@@ -3183,6 +3505,10 @@ function BilanTab({ client, onUpdate }) {
         </FieldRow>
         <FieldRow label="Résultat net (bénéfice / perte)">
           <input type="number" defaultValue={b.resultat ?? ""} onBlur={(e) => patch({ resultat: e.target.value })} placeholder="0"
+            style={{ fontFamily: T.mono, fontSize: 12.5, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, width: 140 }} />
+        </FieldRow>
+        <FieldRow label="Capital social">
+          <input type="number" defaultValue={client.capitalSocial ?? ""} onBlur={(e) => onUpdate(client.id, { capitalSocial: e.target.value })} placeholder="0"
             style={{ fontFamily: T.mono, fontSize: 12.5, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, width: 140 }} />
         </FieldRow>
         <FieldRow label="Capitaux propres">
@@ -3624,7 +3950,10 @@ function RepriseTab({ client, me, meId, portefeuilleId, onUpdate }) {
 }
 
 function ReprisesView({ clients, search, roleFilter, setRoleFilter, me, meId, portefeuilleId, onUpdate }) {
-  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
+  // statutFilter="tous" : sans ça, le filtre par défaut ("actif") masque les dossiers
+  // dès qu'une reprise démarre et bascule le statut sur "transfert" — le dossier
+  // disparaissait alors purement et simplement de cette liste. Voir aussi ResiliationsView.
+  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me, undefined, "tous"), [clients, search, roleFilter, me]);
   const [expanded, setExpanded] = useState(null);
 
   const enCours = filtered.filter((c) => c.reprise?.active);
@@ -3633,13 +3962,24 @@ function ReprisesView({ clients, search, roleFilter, setRoleFilter, me, meId, po
   const renderRow = (c) => {
     const isOpen = expanded === c.id;
     const r = c.reprise || {};
+    const pieces = r.pieces || {};
+    const doneCount = REPRISE_PIECES.filter((k) => pieces[k]).length;
+    const finalisee = r.active && c.statutDossier === "actif";
+    const pretAFinaliser = r.active && !finalisee && doneCount === REPRISE_PIECES.length;
     return (
       <div key={c.id} style={{ borderBottom: `1px solid ${T.line}` }}>
         <div className="hoverRow clickable" onClick={() => setExpanded(isOpen ? null : c.id)}
           style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 4px", flexWrap: "wrap" }}>
           <div style={{ flex: 1, fontWeight: 600, fontSize: 12.5, minWidth: 140 }}>{c.nom}</div>
-          <Stamped tone={r.active ? "amber" : "neutral"} small>{r.active ? "Reprise en cours" : "—"}</Stamped>
+          {finalisee && <Stamped tone="green" small>Terminée</Stamped>}
+          {!finalisee && r.active && <Stamped tone={pretAFinaliser ? "green" : "amber"} small>{pretAFinaliser ? "Prêt à finaliser" : "En cours"}</Stamped>}
+          {!r.active && <Stamped tone="neutral" small>—</Stamped>}
           {r.confrereCedant && <span style={{ fontSize: 11, color: T.inkMuted }}>{r.confrereCedant}</span>}
+          {r.active && !finalisee && !isOpen && (
+            <span style={{ fontSize: 11, fontWeight: 700, color: T.navy, display: "flex", alignItems: "center", gap: 3 }}>
+              Reprendre <ArrowUpRight size={12} />
+            </span>
+          )}
           {isOpen ? <ChevronUp size={15} color={T.inkMuted} /> : <ChevronDown size={15} color={T.inkMuted} />}
         </div>
         {isOpen && <div style={{ padding: "0 4px 16px" }}><RepriseTab client={c} me={me} meId={meId} portefeuilleId={portefeuilleId} onUpdate={onUpdate} /></div>}
@@ -3662,17 +4002,46 @@ function ReprisesView({ clients, search, roleFilter, setRoleFilter, me, meId, po
 /* ============================================================
    TVA GRID VIEW
    ============================================================ */
-function TvaGrid({ clients, search, roleFilter, setRoleFilter, regimeFilter, setRegimeFilter, me, onCycle, onUpdate, onOpenClient }) {
+function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onUpdate, onOpenClient }) {
   const [collabFilter, setCollabFilter] = useState("Tous");
+  const [regimeHeaderFilter, setRegimeHeaderFilter] = useState("Tous");
+  const [exigHeaderFilter, setExigHeaderFilter] = useState("Tous");
   const [sortBy, setSortBy] = useState("nom"); // nom | retards
-  const baseFiltered = useMemo(() => filterClients(clients, search, roleFilter, me, regimeFilter).filter(c => c.tvaRegime), [clients, search, roleFilter, me, regimeFilter]);
-  const collabOptions = useMemo(() => Array.from(new Set(clients.map((c) => c.collab).filter(Boolean))).sort(), [clients]);
+
+  // La vue TVA doit rester robuste même pendant le chargement des dossiers.
+  // On normalise systématiquement la source avant les filtres pour éviter qu'un
+  // dossier incomplet ne fasse planter toute l'application à l'ouverture de l'onglet.
+  const safeClients = Array.isArray(clients) ? clients.filter(Boolean) : [];
+  const baseFiltered = useMemo(() =>
+    filterClients(safeClients, search || "", roleFilter, me).filter((c) => !!c?.tvaRegime),
+    [safeClients, search, roleFilter, me]
+  );
+  const collabOptions = useMemo(() =>
+    Array.from(new Set(safeClients.map((c) => c?.collab).filter(Boolean))).sort(),
+    [safeClients]
+  );
+  const regimeOptions = useMemo(() =>
+    ["Tous", ...Array.from(new Set(baseFiltered.map((c) => c?.tvaRegime).filter(Boolean))).sort()],
+    [baseFiltered]
+  );
+  const exigOptions = useMemo(() => {
+    const values = baseFiltered
+      .map((c) => c?.tvaExig)
+      .filter((v) => v !== "" && v != null && Number.isFinite(Number(v)))
+      .map((v) => Number(v));
+    return ["Tous", ...Array.from(new Set(values)).sort((a, b) => a - b).map(String)];
+  }, [baseFiltered]);
   const countRetards = (c) => MOIS_ORDER.filter((m) => effectiveTvaStatus(c, m) === "RETARD").length;
   const filtered = useMemo(() => {
-    let out = collabFilter === "Tous" ? baseFiltered : baseFiltered.filter((c) => c.collab === collabFilter);
-    out = [...out].sort((a, b) => sortBy === "retards" ? countRetards(b) - countRetards(a) : a.nom.localeCompare(b.nom));
+    let out = collabFilter === "Tous" ? baseFiltered : baseFiltered.filter((c) => c?.collab === collabFilter);
+    if (regimeHeaderFilter !== "Tous") out = out.filter((c) => c?.tvaRegime === regimeHeaderFilter);
+    if (exigHeaderFilter !== "Tous") out = out.filter((c) => String(c?.tvaExig ?? "") === String(exigHeaderFilter));
+    out = [...out].sort((a, b) => sortBy === "retards"
+      ? countRetards(b) - countRetards(a)
+      : String(a?.nom || "").localeCompare(String(b?.nom || ""))
+    );
     return out;
-  }, [baseFiltered, collabFilter, sortBy]);
+  }, [baseFiltered, collabFilter, regimeHeaderFilter, exigHeaderFilter, sortBy]);
   return (
     <div>
       <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 15, fontWeight: 600, color: T.ink, margin: "0 0 5px" }}>Échéances TVA</h1></Reveal>
@@ -3681,7 +4050,7 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, regimeFilter, set
         {" "}CA3 : déclaration du mois M exigible en M+1. CA12 : une seule déclaration, en Mai N+1.
         {" "}Passer une cellule à <Stamped tone="amber" small>Fait</Stamped> notifie le chef de mission du dossier ; il confirme en la faisant passer à <Stamped tone="green" small>OK</Stamped>.
       </p>
-      <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter} />
+      <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} />
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <select value={collabFilter} onChange={(e) => setCollabFilter(e.target.value)} className="input-field !py-1.5 !w-auto text-xs" title="Filtrer par collaborateur">
           <option value="Tous">Collaborateur : Tous</option>
@@ -3694,7 +4063,22 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, regimeFilter, set
       </div>
       <div className="scrollbar" style={{ overflowX: "auto", background: T.card, border: `1px solid ${T.line}`, borderRadius: 16, boxShadow: T.shadowSm }}>
         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11.5 }}>
-          <thead><tr><th style={thStyle}>Dossier</th><th style={thStyle}>Régime</th><th style={{ ...thStyle, textAlign: "center" }}>Éxig.</th>{MOIS_ORDER.map((m) => <th key={m} style={{ ...thStyle, textAlign: "center" }}>{m}</th>)}</tr></thead>
+          <thead><tr>
+            <th style={thStyle}>Dossier</th>
+            <th style={thStyle}>
+              <select value={regimeHeaderFilter} onChange={(e) => setRegimeHeaderFilter(e.target.value)} title="Filtrer par régime TVA"
+                style={{ border: "none", background: "transparent", font: "inherit", color: T.inkMuted, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9.5, fontWeight: 600, cursor: "pointer", padding: 0 }}>
+                {regimeOptions.map((r) => <option key={r} value={r}>{r === "Tous" ? "Régime" : r}</option>)}
+              </select>
+            </th>
+            <th style={{ ...thStyle, textAlign: "center" }}>
+              <select value={exigHeaderFilter} onChange={(e) => setExigHeaderFilter(e.target.value)} title="Filtrer par jour d'exigibilité"
+                style={{ border: "none", background: "transparent", font: "inherit", color: T.inkMuted, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9.5, fontWeight: 600, cursor: "pointer", padding: 0, textAlign: "center" }}>
+                {exigOptions.map((d) => <option key={d} value={d}>{d === "Tous" ? "Exig." : `Exig. ${d}`}</option>)}
+              </select>
+            </th>
+            {MOIS_ORDER.map((m) => <th key={m} style={{ ...thStyle, textAlign: "center" }}>{m}</th>)}
+          </tr></thead>
           <tbody>
             {filtered.map((c) => {
               const isCa12 = c.tvaRegime === "CA12";
@@ -3821,7 +4205,11 @@ function AcompteRow({ client, fields, field, onUpdate }) {
   );
 }
 function ResiliationsView({ clients, search, roleFilter, setRoleFilter, me, meId, portefeuilleId, onUpdate }) {
-  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
+  // statutFilter="tous" : corrige le bug où un dossier disparaissait de la liste dès le
+  // démarrage de la résiliation. Dès qu'une résiliation démarrait, le dossier passait en
+  // statut "transfert", mais cette vue ne regardait (via filterClients) que les dossiers
+  // "actif" par défaut — le dossier disparaissait donc sans aucun moyen d'y revenir.
+  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me, undefined, "tous"), [clients, search, roleFilter, me]);
   const [expanded, setExpanded] = useState(null);
 
   const enCours = filtered.filter((c) => c.resiliation?.active);
@@ -3830,13 +4218,22 @@ function ResiliationsView({ clients, search, roleFilter, setRoleFilter, me, meId
   const renderRow = (c) => {
     const isOpen = expanded === c.id;
     const r = c.resiliation || {};
+    const finalisee = r.active && c.statutDossier === "inactif";
+    const pretAFinaliser = r.active && !!r.piecesRestituees && c.statutDossier === "transfert";
     return (
       <div key={c.id} style={{ borderBottom: `1px solid ${T.line}` }}>
         <div className="hoverRow clickable" onClick={() => setExpanded(isOpen ? null : c.id)}
           style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 4px", flexWrap: "wrap" }}>
           <div style={{ flex: 1, fontWeight: 600, fontSize: 12.5, minWidth: 140 }}>{c.nom}</div>
-          <Stamped tone={r.active ? "red" : "neutral"} small>{r.active ? "Résilié" : "Dossier actif"}</Stamped>
+          {finalisee && <Stamped tone="neutral" small>Sortie finalisée</Stamped>}
+          {!finalisee && r.active && <Stamped tone={pretAFinaliser ? "green" : "red"} small>{pretAFinaliser ? "Prêt à finaliser" : "En cours"}</Stamped>}
+          {!r.active && <Stamped tone="neutral" small>Dossier actif</Stamped>}
           {r.motif && <span style={{ fontSize: 11, color: T.inkMuted }}>{r.motif}</span>}
+          {r.active && !finalisee && !isOpen && (
+            <span style={{ fontSize: 11, fontWeight: 700, color: T.navy, display: "flex", alignItems: "center", gap: 3 }}>
+              Reprendre <ArrowUpRight size={12} />
+            </span>
+          )}
           {isOpen ? <ChevronUp size={15} color={T.inkMuted} /> : <ChevronDown size={15} color={T.inkMuted} />}
         </div>
         {isOpen && <div style={{ padding: "0 4px 16px" }}><ResiliationTab client={c} me={me} meId={meId} portefeuilleId={portefeuilleId} onUpdate={onUpdate} /></div>}
@@ -3973,22 +4370,30 @@ function RevisionTab({ client, onUpdate, setView }) {
     const banqueMois = rev.banqueMois || {};
     patch({ banqueMois: { ...banqueMois, [mois]: bankCycle(banqueMois[mois]) } });
   };
-  const isBtp = client.secteur === "batiment";
 
-  const cotisationRow = (key, label) => (
-    <FieldRow label={label}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <ToggleBtn on={!!rev[key]} onClick={() => patch({ [key]: !rev[key], [`${key}Date`]: !rev[key] ? todayISO() : rev[`${key}Date`] })} />
-        {rev[key] && (
-          <input type="date" value={rev[`${key}Date`] || ""} onChange={(e) => patch({ [`${key}Date`]: e.target.value })}
-            style={{ fontFamily: T.mono, fontSize: 12, padding: "4px 7px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card }} />
-        )}
-      </div>
-    </FieldRow>
-  );
+  const checklist = rev.finBilanChecklist || {};
+  const revisionItems = [
+    ["capitauxPropres", "Vérifier que les capitaux propres sont cohérents avec le capital social"],
+    ["marges", "Analyser les marges et identifier les variations anormales"],
+    ["cfe", "Vérifier que la CFE est payée et correctement comptabilisée"],
+    ["tvaCadrage", "Effectuer et valider le cadrage de TVA"],
+    ["banque", "Valider les rapprochements bancaires de tous les mois"],
+    ["fournisseurs", "Réviser les comptes fournisseurs et les soldes anciens"],
+    ["clients", "Réviser les comptes clients et les créances anciennes"],
+    ["social", "Contrôler les comptes sociaux, charges et dettes"],
+    ["emprunts", "Contrôler les emprunts, intérêts et tableaux d'amortissement"],
+    ["immobilisations", "Contrôler les immobilisations, amortissements et sorties"],
+    ["chargesProduits", "Rechercher charges/produits à rattacher ou à régulariser"],
+    ["comptesAttente", "Apurer les comptes d'attente et comptes divers"],
+    ["impots", "Contrôler IS/IR, CFE et autres impôts"],
+    ["annexes", "Vérifier les éléments nécessaires aux annexes et à la liasse"],
+  ];
+  const doneCount = revisionItems.filter(([id]) => checklist[id]).length;
+  const toggleCheck = (id) => patch({ finBilanChecklist: { ...checklist, [id]: !checklist[id] } });
 
   return (
     <div>
+      <div style={{ height: 14 }} />
       <Panel title="Rapprochements bancaires">
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           {MOIS_ORDER.map((m) => (
@@ -4003,29 +4408,41 @@ function RevisionTab({ client, onUpdate, setView }) {
       <div style={{ height: 14 }} />
 
       <Panel title="OD de salaires">
-        <p style={{ fontSize: 12, color: T.inkMuted, margin: "0 0 10px" }}>Le suivi mois par mois se fait depuis l'onglet Cadre social.</p>
+        <p style={{ fontSize: 12, color: T.inkMuted, margin: "0 0 10px" }}>Le suivi mois par mois se fait depuis Social &amp; paie.</p>
         <button onClick={() => setView && setView("social")} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${T.line}`, borderRadius: 9, padding: "7px 12px", fontSize: 12, color: T.navy, cursor: "pointer" }}>
-          <ArrowUpRight size={13} /> Ouvrir le Cadre social
+          <ArrowUpRight size={13} /> Ouvrir le Suivi social (OD salaires)
         </button>
       </Panel>
 
       <div style={{ height: 14 }} />
 
       <Panel title="Révision des comptes de cotisations">
-        {cotisationRow("urssaf", "URSSAF révisé")}
-        {cotisationRow("retraite", "Caisse de retraite révisée")}
-        {cotisationRow("prevoyance", "Prévoyance révisée")}
+        <p style={{ fontSize: 12, color: T.inkMuted, margin: "0 0 10px" }}>
+          La révision mensuelle (URSSAF, retraite, prévoyance{client.secteur === "batiment" ? ", PRO BTP, CIBTP" : ""}) se fait désormais depuis Social &amp; paie, sous forme de grille mensuelle.
+        </p>
+        <button onClick={() => setView && setView("cotisations")} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${T.line}`, borderRadius: 9, padding: "7px 12px", fontSize: 12, color: T.navy, cursor: "pointer" }}>
+          <ArrowUpRight size={13} /> Ouvrir les Cotisations sociales
+        </button>
       </Panel>
 
-      {isBtp && (
-        <>
-          <div style={{ height: 14 }} />
-          <Panel title="Spécifique BTP">
-            {cotisationRow("proBtp", "PRO BTP révisé")}
-            {cotisationRow("ciBtp", "CIBTP (caisse congés payés) révisé")}
-          </Panel>
-        </>
-      )}
+      <div style={{ height: 14 }} />
+      <Panel title="Révision de fin de bilan">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 12, color: T.inkMuted }}>Checklist de finalisation du bilan — {doneCount}/{revisionItems.length} contrôles réalisés.</div>
+          {doneCount < revisionItems.length ? <Stamped tone="amber" small>À finaliser</Stamped> : <Stamped tone="green" small>Révision complète</Stamped>}
+        </div>
+        {revisionItems.map(([id, label]) => (
+          <label key={id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 4px", borderBottom: `1px solid ${T.line}`, fontSize: 12, color: checklist[id] ? T.inkMuted : T.ink, textDecoration: checklist[id] ? "line-through" : "none", cursor: "pointer" }}>
+            <input type="checkbox" checked={!!checklist[id]} onChange={() => toggleCheck(id)} />
+            <span>{label}</span>
+          </label>
+        ))}
+        {doneCount < revisionItems.length && client.dateCloture && (
+          <div style={{ marginTop: 10, padding: "9px 11px", borderRadius: 9, background: T.amberSoft, color: T.amber, fontSize: 11.5 }}>
+            ⚠️ La révision de fin de bilan n'est pas complète : pensez à traiter chaque contrôle avant de finaliser le dossier.
+          </div>
+        )}
+      </Panel>
     </div>
   );
 }
@@ -4176,8 +4593,7 @@ function RevisionView({ clients, search, roleFilter, setRoleFilter, me, onUpdate
   const revisionStatus = (c) => {
     const rev = c.revision || {};
     const bankDone = MOIS_ORDER.every((m) => (rev.banqueMois?.[m] || "") !== "");
-    const cotisDone = rev.urssaf && rev.retraite && rev.prevoyance;
-    if (bankDone && cotisDone) return "complete";
+    if (bankDone) return "complete";
     if (rev.banqueMois && Object.keys(rev.banqueMois).length) return "encours";
     return "nondemarre";
   };
@@ -4207,7 +4623,7 @@ function RevisionView({ clients, search, roleFilter, setRoleFilter, me, onUpdate
     <div>
       <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Révision comptable</h1></Reveal>
       <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18 }}>
-        Rapprochements bancaires, OD de salaires et révision des comptes de cotisations, dossier par dossier.
+        Rapprochements bancaires, dossier par dossier. Le suivi des OD de salaires et la révision des comptes de cotisations se font désormais depuis le menu « Social &amp; paie ».
       </p>
       <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} />
       <Panel title={`Non démarrée (${late.length})`}>{late.length === 0 ? <EmptyNote text="Aucun dossier dans cette situation." /> : late.map(renderRow)}</Panel>
@@ -4217,6 +4633,37 @@ function RevisionView({ clients, search, roleFilter, setRoleFilter, me, onUpdate
       <Panel title={`Terminée (${complete.length})`}>{complete.length === 0 ? <EmptyNote text="Aucun dossier dans cette situation." /> : complete.map(renderRow)}</Panel>
     </div>
   );
+}
+
+/* ============================================================
+   À SURVEILLER — vue portefeuille / anomalies
+   ============================================================ */
+function SurveillanceView({ clients, search, me, onOpenClient }) {
+  const anomalies = useMemo(() => detectAllAnomalies(clients), [clients]);
+  const filtered = anomalies.filter((a) => {
+    const q = (search || "").trim().toLowerCase();
+    return !q || a.clientNom.toLowerCase().includes(q) || a.message.toLowerCase().includes(q);
+  });
+  const critical = filtered.filter((a) => a.gravite === "haute");
+  const others = filtered.filter((a) => a.gravite !== "haute");
+  const Row = ({ a }) => <div className="hoverRow clickable" onClick={() => onOpenClient(a.clientId)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 5px", borderBottom: `1px solid ${T.line}` }}>
+    <span style={{ width: 8, height: 8, borderRadius: 99, background: a.gravite === "haute" ? T.red : T.amber, flexShrink: 0 }} />
+    <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 12 }}>{a.clientNom}</div><div style={{ color: T.inkMuted, fontSize: 11 }}>{a.message}</div></div>
+    <Stamped tone={a.gravite === "haute" ? "red" : "amber"} small>{a.gravite === "haute" ? "Important" : "À vérifier"}</Stamped>
+  </div>;
+  return <div>
+    <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>À surveiller</h1></Reveal>
+    <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18 }}>Les contrôles automatiques qui méritent l’attention du chef de mission.</p>
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3" style={{ marginBottom: 18 }}>
+      <KpiCard label="Anomalies" value={filtered.length} icon={ShieldAlert} tone={filtered.length ? "amber" : "green"} />
+      <KpiCard label="Importantes" value={critical.length} icon={AlertTriangle} tone={critical.length ? "red" : "green"} />
+      <KpiCard label="À vérifier" value={others.length} icon={Search} tone={others.length ? "amber" : "green"} />
+      <KpiCard label="Dossiers concernés" value={new Set(filtered.map((a) => a.clientId)).size} icon={Users} tone="neutral" />
+    </div>
+    <Panel title={`Priorité haute (${critical.length})`}>{critical.length ? critical.map((a) => <Row key={a.id} a={a} />) : <EmptyNote text="Aucune anomalie importante." />}</Panel>
+    <div style={{ height: 16 }} />
+    <Panel title={`À vérifier (${others.length})`}>{others.length ? others.map((a) => <Row key={a.id} a={a} />) : <EmptyNote text="Aucun contrôle en attente." />}</Panel>
+  </div>;
 }
 
 /* ============================================================
@@ -4487,6 +4934,155 @@ function ConcerneToggle({ on, onChange, small }) {
     <div style={{ display: "inline-flex", borderRadius: 999, border: `1px solid ${T.line}`, overflow: "hidden" }}>
       <button onClick={() => onChange(true)} style={{ ...size, fontWeight: 700, border: "none", cursor: "pointer", background: on ? T.navy : "transparent", color: on ? "#fff" : T.inkMuted }}>Concerné</button>
       <button onClick={() => onChange(false)} style={{ ...size, fontWeight: 700, border: "none", cursor: "pointer", background: !on ? T.paperDeep : "transparent", color: !on ? T.inkSoft : T.inkMuted }}>Non concerné</button>
+    </div>
+  );
+}
+/* ============================================================
+   GESTIONNAIRE DE PAIE — coordonnées du gestionnaire externe
+   par dossier (nom, adresse, téléphone, e-mail).
+   ============================================================ */
+function GestionnairePaieView({ clients, search, setSearch, roleFilter, setRoleFilter, me, onUpdate }) {
+  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
+  const concernes = filtered.filter((c) => c.social?.concerne);
+  const autres = filtered.filter((c) => !c.social?.concerne);
+  const patchSocial = (c, patch) => onUpdate(c.id, { social: { ...(c.social || {}), ...patch } });
+  const cellInput = { fontSize: 11.5, padding: "3px 6px", borderRadius: 5, border: `1px solid ${T.line}`, background: T.paper };
+  return (
+    <div>
+      <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Gestionnaire de paie</h1></Reveal>
+      <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18, lineHeight: 1.6 }}>
+        Coordonnées du gestionnaire de paie externe (cabinet de paie), dossier par dossier — utile pour contacter directement l'interlocuteur en cas de question sur les bulletins ou les OD de salaires.
+      </p>
+      <FilterBar search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={concernes.length} />
+      <Panel title={`Dossiers concernés (${concernes.length})`}>
+        {concernes.length === 0 ? <EmptyNote text="Aucun dossier marqué « concerné » pour l'instant — depuis Cadre social ou Cotisations sociales." /> : (
+          <div className="scrollbar" style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11.5 }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Dossier</th><th style={thStyle}>Cabinet de paie</th><th style={thStyle}>Gestionnaire</th>
+                  <th style={thStyle}>Adresse</th><th style={thStyle}>Téléphone</th><th style={thStyle}>E-mail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {concernes.map((c) => (
+                  <tr key={c.id} className="hoverRow">
+                    <td style={{ ...tdStyle, fontWeight: 600, whiteSpace: "nowrap" }}>{c.nom}</td>
+                    <td style={tdStyle}>
+                      <input defaultValue={c.social?.cabinetPaie || ""} placeholder="ex. Silae, ADP…" onBlur={(e) => patchSocial(c, { cabinetPaie: e.target.value })} style={{ ...cellInput, width: 110 }} />
+                    </td>
+                    <td style={tdStyle}>
+                      <input defaultValue={c.social?.gestionnaireNom || ""} placeholder="Nom du gestionnaire" onBlur={(e) => patchSocial(c, { gestionnaireNom: e.target.value })} style={{ ...cellInput, width: 130 }} />
+                    </td>
+                    <td style={tdStyle}>
+                      <input defaultValue={c.social?.gestionnaireAdresse || ""} placeholder="Adresse" onBlur={(e) => patchSocial(c, { gestionnaireAdresse: e.target.value })} style={{ ...cellInput, width: 170 }} />
+                    </td>
+                    <td style={tdStyle}>
+                      <input defaultValue={c.social?.gestionnaireTel || ""} placeholder="Téléphone" onBlur={(e) => patchSocial(c, { gestionnaireTel: e.target.value })} style={{ ...cellInput, width: 110 }} />
+                    </td>
+                    <td style={tdStyle}>
+                      <input defaultValue={c.social?.gestionnaireEmail || ""} placeholder="E-mail" onBlur={(e) => patchSocial(c, { gestionnaireEmail: e.target.value })} style={{ ...cellInput, width: 170 }} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+      <div style={{ height: 16 }} />
+      <Panel title={`Autres dossiers (${autres.length})`}>
+        {autres.length === 0 ? <EmptyNote text="Tous les dossiers de cette sélection sont marqués concernés." /> : autres.map((c) => (
+          <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 4px", borderBottom: `1px solid ${T.line}` }}>
+            <span style={{ flex: 1, fontWeight: 600, fontSize: 12.5 }}>{c.nom}</span>
+            <ConcerneToggle on={!!c.social?.concerne} onChange={(v) => patchSocial(c, { concerne: v })} />
+          </div>
+        ))}
+      </Panel>
+    </div>
+  );
+}
+
+/* ============================================================
+   COTISATIONS SOCIALES — grille mensuelle cliquable (comme les
+   rapprochements bancaires) pour URSSAF / retraite / prévoyance
+   (+ PRO BTP / CIBTP si secteur BTP). Historique conservé mois
+   par mois dans client.revision.cotisMois.
+   ============================================================ */
+const COTISATION_TYPES = [
+  { key: "urssaf", label: "URSSAF" },
+  { key: "retraite", label: "Caisse de retraite" },
+  { key: "prevoyance", label: "Prévoyance" },
+];
+const COTISATION_TYPES_BTP = [
+  { key: "proBtp", label: "PRO BTP" },
+  { key: "ciBtp", label: "CIBTP (caisse congés payés)" },
+];
+function cotisationTypesFor(client) {
+  return client.secteur === "batiment" ? [...COTISATION_TYPES, ...COTISATION_TYPES_BTP] : COTISATION_TYPES;
+}
+function CotisationMonthlyGrid({ client, onUpdate }) {
+  const rev = client.revision || {};
+  const cotisMois = rev.cotisMois || {};
+  const types = cotisationTypesFor(client);
+  const cycleCell = (typeKey, mois) => {
+    const monthsObj = cotisMois[typeKey] || {};
+    onUpdate(client.id, { revision: { ...rev, cotisMois: { ...cotisMois, [typeKey]: { ...monthsObj, [mois]: bankCycle(monthsObj[mois]) } } } });
+  };
+  return (
+    <div>
+      {types.map((t) => (
+        <div key={t.key} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>{t.label}</div>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {MOIS_ORDER.map((m) => (
+              <button key={m} className="clickable" onClick={() => cycleCell(t.key, m)} style={{ background: "none", border: `1px solid ${T.line}`, borderRadius: 8, padding: "6px 4px", minWidth: 50, textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: T.inkMuted, marginBottom: 3 }}>{m}</div>
+                <Stamped tone={bankTone(cotisMois[t.key]?.[m])} small>{bankLabel(cotisMois[t.key]?.[m])}</Stamped>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function CotisationsSocialesView({ clients, search, roleFilter, setRoleFilter, me, onUpdate }) {
+  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
+  const concernes = filtered.filter((c) => c.social?.concerne);
+  const [expanded, setExpanded] = useState(null);
+  const completion = (c) => {
+    const rev = c.revision || {}; const cotisMois = rev.cotisMois || {};
+    const types = cotisationTypesFor(c); const m = currentMonthKey();
+    const done = types.filter((t) => (cotisMois[t.key]?.[m] || "") !== "").length;
+    return { done, total: types.length };
+  };
+  const renderRow = (c) => {
+    const isOpen = expanded === c.id;
+    const comp = completion(c);
+    return (
+      <div key={c.id} style={{ borderBottom: `1px solid ${T.line}` }}>
+        <div className="hoverRow clickable" onClick={() => setExpanded(isOpen ? null : c.id)}
+          style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 4px", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, fontWeight: 600, fontSize: 12.5, minWidth: 140 }}>{c.nom}</div>
+          <Stamped tone={comp.done === comp.total ? "green" : comp.done > 0 ? "amber" : "neutral"} small>{comp.done}/{comp.total} ce mois-ci</Stamped>
+          {isOpen ? <ChevronUp size={15} color={T.inkMuted} /> : <ChevronDown size={15} color={T.inkMuted} />}
+        </div>
+        {isOpen && <div style={{ padding: "0 4px 16px" }}><CotisationMonthlyGrid client={c} onUpdate={onUpdate} /></div>}
+      </div>
+    );
+  };
+  return (
+    <div>
+      <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Cotisations sociales</h1></Reveal>
+      <p style={{ color: T.inkMuted, fontSize: 12.5, marginTop: 0, marginBottom: 18, lineHeight: 1.6 }}>
+        Révision des comptes de cotisations — URSSAF, caisse de retraite, prévoyance (et PRO BTP / CIBTP pour les dossiers du bâtiment) — mois par mois, dossier par dossier.
+        {" "}Cliquez une cellule : vide → <Stamped tone="green" small>Fait</Stamped> → <Stamped tone="neutral" small>N/A</Stamped>. L'historique est conservé mois par mois.
+      </p>
+      <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={concernes.length} />
+      <Panel title={`Dossiers concernés (${concernes.length})`}>
+        {concernes.length === 0 ? <EmptyNote text="Aucun dossier marqué « concerné par le social » pour l'instant." /> : concernes.map(renderRow)}
+      </Panel>
     </div>
   );
 }
@@ -4911,6 +5507,54 @@ function planningBucket(task, weekStart) {
   if (date >= weekStart && date <= weekEnd) return "semaine";
   return "plus-tard";
 }
+/* ---- Export .ics (Outlook / calendrier) ----
+   Une synchronisation live à deux sens nécessiterait un serveur avec l'API
+   Microsoft Graph + OAuth, impossible depuis une appli 100% front-end. On génère
+   donc ici un fichier .ics standard téléchargeable, importable manuellement dans
+   Outlook (Fichier > Ouvrir & exporter > Importer/Exporter, ou double-clic direct). */
+function icsEscape(str) {
+  return String(str || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+}
+function icsDateTime(dateISO, timeHHMM) {
+  const [y, m, d] = dateISO.split("-").map(Number);
+  const [h, min] = (timeHHMM || "09:00").split(":").map(Number);
+  return `${String(y).padStart(4, "0")}${String(m).padStart(2, "0")}${String(d).padStart(2, "0")}T${String(h).padStart(2, "0")}${String(min).padStart(2, "0")}00`;
+}
+function icsDateTimePlusMinutes(dateISO, timeHHMM, minutes) {
+  const [y, m, d] = dateISO.split("-").map(Number);
+  const [h, min] = (timeHHMM || "09:00").split(":").map(Number);
+  const dt = new Date(y, m - 1, d, h, min);
+  dt.setMinutes(dt.getMinutes() + (minutes || 60));
+  return `${dt.getFullYear()}${String(dt.getMonth() + 1).padStart(2, "0")}${String(dt.getDate()).padStart(2, "0")}T${String(dt.getHours()).padStart(2, "0")}${String(dt.getMinutes()).padStart(2, "0")}00`;
+}
+function buildPlanningICS(tasks, clientById) {
+  const now = new Date();
+  const stamp = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(now.getUTCDate()).padStart(2, "0")}T${String(now.getUTCHours()).padStart(2, "0")}${String(now.getUTCMinutes()).padStart(2, "0")}${String(now.getUTCSeconds()).padStart(2, "0")}Z`;
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//AXE-EXPERTS//Planning//FR", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
+  tasks.filter((t) => t.date_echeance && t.heure_debut).forEach((t) => {
+    const client = clientById[t.client_id];
+    const summary = client ? `${client.nom} — ${t.nom}` : t.nom;
+    lines.push("BEGIN:VEVENT");
+    lines.push(`UID:${t.id}@axe-experts.planning`);
+    lines.push(`DTSTAMP:${stamp}`);
+    lines.push(`DTSTART:${icsDateTime(t.date_echeance, t.heure_debut)}`);
+    lines.push(`DTEND:${icsDateTimePlusMinutes(t.date_echeance, t.heure_debut, t.duree_minutes || 60)}`);
+    lines.push(`SUMMARY:${icsEscape(summary)}`);
+    if (t.commentaire) lines.push(`DESCRIPTION:${icsEscape(t.commentaire)}`);
+    lines.push("END:VEVENT");
+  });
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
+function exportPlanningToICS(tasks, clientById) {
+  const ics = buildPlanningICS(tasks, clientById);
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `planning-axe-experts-${todayISO()}.ics`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 const PLANNING_FILTERS = [
   { id: "toutes", label: "Toutes" },
   { id: "retard", label: "En retard" },
@@ -4985,6 +5629,10 @@ function PlanningView({ tasks, clients, me, onUpdate, onOpenClient }) {
             </span>
             <button onClick={() => setWeekOffset((w) => w + 1)} style={navBtnStyle}><ChevronRight size={15} /></button>
             {weekOffset !== 0 && <button onClick={() => setWeekOffset(0)} style={{ ...navBtnStyle, width: "auto", padding: "0 10px", fontSize: 11 }}>Aujourd'hui</button>}
+            <button onClick={() => exportPlanningToICS(scheduled, clientById)} title="Télécharge un fichier .ics avec toutes les tâches planifiées, à importer dans Outlook"
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${T.line}`, borderRadius: 9, padding: "7px 12px", fontSize: 11.5, fontWeight: 700, color: T.navy, cursor: "pointer" }}>
+              <Download size={13} /> Exporter vers Outlook
+            </button>
           </div>
         </div>
       </Reveal>
