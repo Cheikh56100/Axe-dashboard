@@ -925,6 +925,21 @@ async function insertClientRemote(client) {
     );
   }
 }
+async function updateClientRemote(id, client) {
+  const { id: _id, portefeuilleId, ...rest } = client;
+
+  const { error } = await supabase
+    .from("clients")
+    .update({
+      data: rest,
+      portefeuille_id: portefeuilleId || null,
+    })
+    .eq("id", id);
+
+  if (error) {
+    console.error("Erreur mise à jour client :", error.message);
+  }
+}
 async function deleteClientRemote(id) {
   const { error } = await supabase
     .from("clients")
