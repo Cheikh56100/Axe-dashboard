@@ -912,18 +912,7 @@ async function insertClientRemote(client) {
   const { error } = await supabase.from("clients").insert({ id, data: rest, portefeuille_id: portefeuilleId || null });
   if (error) console.error("Erreur création client :", error.message);
 }
-const { error } = await supabase.from("clients").update({ data: rest }).eq("id", id);
-if (error) console.error("Erreur sauvegarde client :", error.message);
-}
-async function deleteClientRemote(id) {
-  const { error } = await supabase.from("clients").delete().eq("id", id);
-  if (error) throw error;
-}
-  const { id: _drop, portefeuilleId: _drop2, ...rest } = fullClient;
-  const { error } = await supabase.from("clients").update({ data: rest }).eq("id", id);
-  if (error) console.error("Erreur sauvegarde client :", error.message);
-}
-
+onst { error } = await supabase.from("clients
 /* ---- Équipe : Supabase (table "team"). Un compte = un collaborateur.
    Chaque inscription (email + mot de passe) crée automatiquement, côté base
    de données, une fiche "team" qui lui est liée (voir trigger handle_new_user
