@@ -632,8 +632,22 @@ function exportAcomptesToExcel(clients, filename = "acomptes-is-cfe.xlsx") {
   XLSX.utils.book_append_sheet(wb, ws, "Acomptes");
   XLSX.writeFile(wb, filename);
 }
+// Vérifie qu'une chaîne est bien une date calendaire réelle au format AAAA-MM-JJ
+// (rejette par ex. "2025-13-40" ou "31/12/2025", qui passeraient un simple test de format).
+function isValidISODate(str) {
+  if (typeof str !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
+  const [y, m, d] = str.split("-").map(Number);
+  if (m < 1 || m > 12) return false;
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+}
+
 // Lit un fichier .xlsx/.xls/.csv et retourne une liste d'objets clients partiels
 // (uniquement les champs reconnus), prêts à être fusionnés avec le registre existant.
+// Si une ou plusieurs lignes contiennent des valeurs non conformes (date invalide,
+// SIREN invalide, etc.), l'import COMPLET est refusé (rejet de la Promise) avec un
+// message détaillant les lignes fautives — plutôt que d'accepter des données
+// corrompues qui feraient planter l'application plus tard, ailleurs dans l'écran.
 function parseClientsExcelFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -645,29 +659,58 @@ function parseClientsExcelFile(file) {
         const raw = XLSX.utils.sheet_to_json(sheet, { defval: "" });
         if (!raw.length) return resolve([]);
         const headerMap = buildHeaderMap(Object.keys(raw[0]));
-        const rows = raw.map((r) => {
+        const rowErrors = [];
+        const rows = raw.map((r, i) => {
           const out = {};
+          const excelRowNum = i + 2; // +1 pour l'index 0-based, +1 pour la ligne d'en-tête
           Object.keys(r).forEach((h) => {
             const key = headerMap[h];
             if (!key) return;
             let v = r[h];
             if (key === "tvaExig") v = v === "" ? "" : parseInt(v, 10) || "";
             if (typeof v === "string") v = v.trim();
-            // dans parseClientsExcelFile, juste après la ligne : if (typeof v === "string") v = v.trim();
-// dans parseClientsExcelFile, juste après la ligne : if (typeof v === "string") v = v.trim();
-if (key === "siren" && v !== "") v = String(v).trim();
-if (key === "dateCloture" && v !== "") {
-  if (v instanceof Date) {
-    v = v.toISOString().slice(0, 10);
-  } else if (typeof v === "number") {
-    // numéro de série Excel -> date JS
-    const d = XLSX.SSF.parse_date_code(v);
-    v = `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
-  } else if (typeof v === "string") {
-    v = v.trim(); // déjà au bon format, on garde tel quel
-  }
+            if (key === "siren" && v !== "") {
+              v = String(v).trim();
+              if (!/^\d{9}$/.test(v) && !/^\d{14}$/.test(v)) {
+                rowErrors.push({ row: excelRowNum, nom: r.nom || r.Nom || "(sans nom)", field: "SIREN/SIRET", value: v, reason: "doit contenir 9 chiffres (SIREN) ou 14 chiffres (SIRET)" });
+              }
+            }
+            if (key === "dateCloture" && v !== "") {
+              if (v instanceof Date) {
+                v = v.toISOString().slice(0, 10);
+              } else if (typeof v === "number") {
+                // numéro de série Excel -> date JS
+                const d = XLSX.SSF.parse_date_code(v);
+                v = `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
+              } else if (typeof v === "string") {
+                v = v.trim();
+              }
+              if (!isValidISODate(v)) {
+                rowErrors.push({ row: excelRowNum, nom: out.nom || "(sans nom)", field: "Date clôture", value: v, reason: "format attendu AAAA-MM-JJ (ex. 2025-12-31)" });
+              }
+            }
+            out[key] = v;
+          });
+          return out;
+        }).filter((r) => r.nom || r.siren);
+
+        if (rowErrors.length > 0) {
+          const detail = rowErrors.slice(0, 8).map(
+            (e) => `Ligne ${e.row} (${e.nom}) : "${e.field}" invalide ("${e.value}") — ${e.reason}`
+          ).join("\n");
+          const more = rowErrors.length > 8 ? `\n… et ${rowErrors.length - 8} autre(s) ligne(s) invalide(s).` : "";
+          reject(new Error(
+            `Import refusé : ${rowErrors.length} ligne(s) non conforme(s). Aucune donnée n'a été importée.\n${detail}${more}`
+          ));
+          return;
+        }
+
+        resolve(rows);
+      } catch (err) { reject(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
 }
-out[key] = v;
 
 /* ============================================================
    STATUT TVA EFFECTIF
@@ -2844,7 +2887,7 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
         )}
       </Reveal>
       {importMsg && (
-          <div className={`mt-2 text-xs font-semibold px-2.5 py-1.5 rounded-lg inline-block ${importMsg.tone === "green" ? "bg-badge-green-bg text-badge-green-text" : importMsg.tone === "red" ? "bg-badge-red-bg text-badge-red-text" : "bg-badge-amber-bg text-badge-amber-text"}`}>{importMsg.text}</div>
+          <div style={{ whiteSpace: "pre-line" }} className={`mt-2 text-xs font-semibold px-2.5 py-1.5 rounded-lg inline-block max-w-full ${importMsg.tone === "green" ? "bg-badge-green-bg text-badge-green-text" : importMsg.tone === "red" ? "bg-badge-red-bg text-badge-red-text" : "bg-badge-amber-bg text-badge-amber-text"}`}>{importMsg.text}</div>
         )}
       <p className="text-inkmuted text-xs mt-1.5 mb-5">Cliquez un dossier pour ouvrir sa fiche complète.</p>
       <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter}
