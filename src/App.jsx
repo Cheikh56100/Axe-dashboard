@@ -2933,6 +2933,12 @@ function Dashboard({
   team,
   onSuperviseClick
 }) {
+    const today = new Date();
+  const dateStr = today.toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long"
+  });
   const counts = computeCounts(myClients);
   const anomalies = useMemo(() => detectAllAnomalies(myClients), [myClients]);
   const criticalAnomalies = anomalies.filter((a) => a.gravite === "haute");
