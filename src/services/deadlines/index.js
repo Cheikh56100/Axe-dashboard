@@ -35,8 +35,9 @@ export function diffInDays(date, now = new Date()) {
 }
 
 export function addMonthsISO(iso, months) {
-  if (!iso) return null;
+  if (!iso || typeof iso !== "string") return null;
   const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return null;
   const dt = new Date(y, m - 1 + months, d);
   return dt.toISOString().slice(0, 10);
 }
@@ -219,11 +220,13 @@ export function buildClientDeadlines(client, rules = DEFAULT_DEADLINE_RULES, now
   // Bilan — clôture + délai si non finalisé
   if (client.dateCloture && client.bilan?.nonFinalise) {
     const echeanceISO = addMonthsISO(client.dateCloture, rules.bilanDelaiMois);
-    const [by, bm, bd] = echeanceISO.split("-").map(Number);
-    push({
-      id: `${client.id}-bilan`, category: "Bilan", label: "Dépôt du bilan",
-      date: new Date(by, bm - 1, bd),
-    });
+    if (echeanceISO) {
+      const [by, bm, bd] = echeanceISO.split("-").map(Number);
+      push({
+        id: `${client.id}-bilan`, category: "Bilan", label: "Dépôt du bilan",
+        date: new Date(by, bm - 1, bd),
+      });
+    }
   }
   // AGE/AGO — clôture + délai si non tenue
   if (client.dateCloture) {
@@ -231,11 +234,13 @@ export function buildClientDeadlines(client, rules = DEFAULT_DEADLINE_RULES, now
     const y = latestYear ? client.ageAgoHistory[latestYear] : null;
     if (y && !y.ago) {
       const echeanceISO = addMonthsISO(client.dateCloture, rules.ageAgoDelaiMois);
-      const [ay, am, ad] = echeanceISO.split("-").map(Number);
-      push({
-        id: `${client.id}-ago-${latestYear}`, category: "AGO",
-        label: `Approbation des comptes ${latestYear}`, date: new Date(ay, am - 1, ad),
-      });
+      if (echeanceISO) {
+        const [ay, am, ad] = echeanceISO.split("-").map(Number);
+        push({
+          id: `${client.id}-ago-${latestYear}`, category: "AGO",
+          label: `Approbation des comptes ${latestYear}`, date: new Date(ay, am - 1, ad),
+        });
+      }
     }
   }
 
