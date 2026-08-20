@@ -14,10 +14,10 @@ export default {
         inksoft: "#334155",
         inkmuted: "#64748B",
         accent: {
-          DEFAULT: "#1E293B",
-          deep: "#1E3A8A",
-          soft: "#EEF2FF",
-        },
+  DEFAULT: "#2563EB",
+  deep: "#1D4ED8",
+  soft: "#EFF6FF",
+},
         badge: {
           green: { bg: "#DCFCE7", text: "#15803D" },
           red: { bg: "#FEE2E2", text: "#B91C1C" },
