@@ -24,10 +24,10 @@ const T = {
   green: "#16A34A", greenSoft: "#DCFCE7", red: "#DC2626", redSoft: "#FEE2E2",
   amber: "#D97706", amberSoft: "#FEF3C7",
   /* accent sobre façon Kabineo (indigo) */
-  navy: "#4F46E5", navySoft: "#EEF2FF",
+  navy: "#2563EB", navySoft: "#EFF6FF",
   /* sidebar sombre façon "slate/ardoise" : fond bleu-nuit très foncé, textes clairs */
   sidebarBg: "#0F172A", sidebarBg2: "#1E293B", sidebarInk: "#E2E8F0", sidebarInkMuted: "#94A3B8",
-  sidebarActive: "rgba(99,102,241,0.22)", sidebarBorder: "#1E293B", sidebarAccent: "#818CF8",
+  sidebarActive: "rgba(99,102,241,0.22)", sidebarBorder: "#1E293B", sidebarAccent: "#60A5FA",
   serif: "'Plus Jakarta Sans', 'Inter', -apple-system, sans-serif", mono: "'JetBrains Mono', ui-monospace, monospace", sans: "'Inter', -apple-system, sans-serif",
   shadow: "0 1px 2px rgba(15,23,42,0.04), 0 8px 20px -6px rgba(15,23,42,0.08)",
   shadowSm: "0 1px 2px rgba(15,23,42,0.05), 0 1px 3px rgba(15,23,42,0.06)",
@@ -912,7 +912,13 @@ async function insertClientRemote(client) {
   const { error } = await supabase.from("clients").insert({ id, data: rest, portefeuille_id: portefeuilleId || null });
   if (error) console.error("Erreur création client :", error.message);
 }
-async function updateClientRemote(id, fullClient) {
+const { error } = await supabase.from("clients").update({ data: rest }).eq("id", id);
+if (error) console.error("Erreur sauvegarde client :", error.message);
+}
+async function deleteClientRemote(id) {
+  const { error } = await supabase.from("clients").delete().eq("id", id);
+  if (error) throw error;
+}
   const { id: _drop, portefeuilleId: _drop2, ...rest } = fullClient;
   const { error } = await supabase.from("clients").update({ data: rest }).eq("id", id);
   if (error) console.error("Erreur sauvegarde client :", error.message);
@@ -1193,6 +1199,45 @@ function CabinetApp({ session, onLogout }) {
       setTimeout(() => setSaveStatus("idle"), 1200);
     });
   }, []);
+  const deleteClient = useCallback(async (id) => {
+  const target = clients.find((c) => c.id === id);
+  if (!target) return false;
+
+  setSaveStatus("saving");
+
+  try {
+    await deleteClientRemote(id);
+
+    setClients((prev) => prev.filter((c) => c.id !== id));
+    setOpenClientTabs((prev) => prev.filter((t) => t.id !== id));
+
+    if (activeClientTab === id) {
+      setActiveClientTab(null);
+    }
+
+    logActivity({
+      clientId: id,
+      portefeuilleId: target.portefeuilleId || null,
+      type: "suppression",
+      message: `Dossier ${target.nom || id} supprimé par ${me || "utilisateur"}`,
+      auteurId: myRow?.id || null,
+    });
+
+    setSaveStatus("saved");
+    setTimeout(() => setSaveStatus("idle"), 1200);
+
+    return true;
+  } catch (error) {
+    console.error("Erreur suppression client :", error.message);
+    setSaveStatus("idle");
+
+    alert(
+      "Impossible de supprimer ce dossier. Vérifiez vos droits Supabase et réessayez."
+    );
+
+    return false;
+  }
+}, [clients, activeClientTab, me, myRow?.id]);
 
   // Import Excel/CSV : crée ou met à jour plusieurs fiches clients d'un coup.
   // Rapprochement par SIREN si renseigné, sinon par nom (insensible à la casse).
@@ -1456,8 +1501,18 @@ function CabinetApp({ session, onLogout }) {
             // interne (onglet secondaire "Infos / TVA / Bilan…") sont ainsi réinitialisés
             // avec les données du dossier sélectionné, au lieu de rester figés sur
             // l'ancien dossier affiché.
-            <ClientEditorPage key={activeClient.id} client={activeClient} team={visibleTeam} me={me} meId={myRow?.id} portefeuilleId={myPortefeuilleId} onUpdate={updateClient}
-              onClose={() => closeClientTab(activeClient.id)} setView={navTo} />
+            <ClientEditorPage
+  key={activeClient.id}
+  client={activeClient}
+  team={visibleTeam}
+  me={me}
+  meId={myRow?.id}
+  portefeuilleId={myPortefeuilleId}
+  onUpdate={updateClient}
+  onDelete={deleteClient}
+  onClose={() => closeClientTab(activeClient.id)}
+  setView={navTo}
+/>
           ) : (
             <>
               {view === "pilotage" && <PilotageView clients={myClients} tasks={[...visibleTasksDb, ...autoTasksForPage]} team={visibleTeam} me={me} onOpenClient={openClientTab} onView={navTo} />}
@@ -1471,7 +1526,8 @@ function CabinetApp({ session, onLogout }) {
                   regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter} me={me}
                   collabQuickFilter={collabQuickFilter} setCollabQuickFilter={setCollabQuickFilter}
                   selected={activeClientTab} setSelected={openClientTab} onAdd={() => setShowAddClient(true)}
-                  onUpdate={updateClient} onImport={importClients} />
+                  onUpdate={updateClient}
+onImport={importClients} />
               )}
               {view === "tva" && <TvaGrid clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter}
                 me={me}
@@ -2405,6 +2461,346 @@ function FilterBar({ roleFilter, setRoleFilter, count, regimeFilter, setRegimeFi
 }
 
 /* ============================================================
+   DASHBOARD — ANALYTIQUES VISUELLES
+   ============================================================ */
+
+const DASHBOARD_CHART_COLORS = [
+  "#2563EB",
+  "#14B8A6",
+  "#8B5CF6",
+  "#F59E0B",
+  "#F43F5E",
+  "#06B6D4",
+  "#64748B",
+  "#22C55E",
+];
+
+function DonutDistribution({ title, items, total, icon: Icon = CircleDot }) {
+  const safeItems = (items || []).filter((x) => Number(x.value) > 0);
+
+  const sum = safeItems.reduce(
+    (acc, x) => acc + Number(x.value),
+    0
+  );
+
+  let cursor = 0;
+
+  const stops = safeItems.map((item, i) => {
+    const pct = (Number(item.value) / (sum || 1)) * 100;
+    const start = cursor;
+
+    cursor += pct;
+
+    return `${item.color || DASHBOARD_CHART_COLORS[i % DASHBOARD_CHART_COLORS.length]} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`;
+  });
+
+  const shownTotal = total ?? sum;
+
+  return (
+    <Panel
+      title={title}
+      right={<Icon size={15} color={T.inkMuted} />}
+    >
+      {!safeItems.length ? (
+        <EmptyNote text="Aucune donnée renseignée pour le moment." />
+      ) : (
+        <div className="grid grid-cols-[118px_1fr] sm:grid-cols-[136px_1fr] gap-4 items-center">
+
+          <div
+            style={{
+              position: "relative",
+              width: 118,
+              height: 118,
+              margin: "0 auto",
+            }}
+          >
+            <div
+              aria-label={`${shownTotal} dossiers`}
+              style={{
+                width: "100%",
+                height: "100%",
+                borderRadius: "50%",
+                background: `conic-gradient(${stops.join(", ")})`,
+                boxShadow:
+                  "inset 0 0 0 1px rgba(15,23,42,.04)",
+              }}
+            />
+
+            <div
+              style={{
+                position: "absolute",
+                inset: 19,
+                borderRadius: "50%",
+                background: T.card,
+                border: `1px solid ${T.line}`,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <strong
+                style={{
+                  fontFamily: T.serif,
+                  fontSize: 20,
+                  lineHeight: 1,
+                  color: T.ink,
+                }}
+              >
+                {shownTotal}
+              </strong>
+
+              <span
+                style={{
+                  fontSize: 9.5,
+                  color: T.inkMuted,
+                  marginTop: 5,
+                }}
+              >
+                dossiers
+              </span>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              minWidth: 0,
+            }}
+          >
+            {safeItems.slice(0, 7).map((item, i) => {
+              const pct =
+                (Number(item.value) / (sum || 1)) * 100;
+
+              const color =
+                item.color ||
+                DASHBOARD_CHART_COLORS[
+                  i % DASHBOARD_CHART_COLORS.length
+                ];
+
+              return (
+                <div
+                  key={`${item.label}-${i}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    minWidth: 0,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 99,
+                      background: color,
+                      flexShrink: 0,
+                    }}
+                  />
+
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      fontSize: 10.5,
+                      color: T.inkSoft,
+                    }}
+                  >
+                    {item.label}
+                  </span>
+
+                  <strong
+                    style={{
+                      fontSize: 10.5,
+                      color: T.ink,
+                      fontFamily: T.mono,
+                    }}
+                  >
+                    {pct.toFixed(pct >= 10 ? 0 : 1)}%
+                  </strong>
+                </div>
+              );
+            })}
+
+            {safeItems.length > 7 && (
+              <span
+                style={{
+                  fontSize: 9.5,
+                  color: T.inkMuted,
+                }}
+              >
+                + {safeItems.length - 7} autres catégories
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function HorizontalDistribution({
+  title,
+  items,
+  icon: Icon = Users,
+}) {
+  const safe = (items || []).filter(
+    (x) => Number(x.value) > 0
+  );
+
+  const max = Math.max(
+    1,
+    ...safe.map((x) => Number(x.value))
+  );
+
+  return (
+    <Panel
+      title={title}
+      right={<Icon size={15} color={T.inkMuted} />}
+    >
+      {!safe.length ? (
+        <EmptyNote text="Aucune donnée disponible." />
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 11,
+          }}
+        >
+          {safe.slice(0, 8).map((item, i) => {
+            const pct =
+              (Number(item.value) / max) * 100;
+
+            const color =
+              item.color ||
+              DASHBOARD_CHART_COLORS[
+                i % DASHBOARD_CHART_COLORS.length
+              ];
+
+            return (
+              <div key={`${item.label}-${i}`}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    marginBottom: 5,
+                    fontSize: 10.5,
+                  }}
+                >
+                  <span
+                    style={{
+                      color: T.inkSoft,
+                      fontWeight: 600,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {item.label}
+                  </span>
+
+                  <strong
+                    style={{
+                      color: T.ink,
+                      fontFamily: T.mono,
+                    }}
+                  >
+                    {item.value}
+                  </strong>
+                </div>
+
+                <div
+                  style={{
+                    height: 7,
+                    borderRadius: 999,
+                    background: T.paperDeep,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${pct}%`,
+                      height: "100%",
+                      borderRadius: 999,
+                      background: color,
+                      transition: "width .35s ease",
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function buildDistribution(
+  clients,
+  keyFn,
+  labelFn,
+  colorFn
+) {
+  const map = new Map();
+
+  clients.forEach((client) => {
+    const key =
+      keyFn(client) || "non_renseigne";
+
+    map.set(
+      key,
+      (map.get(key) || 0) + 1
+    );
+  });
+
+  return [...map.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, value], i) => ({
+      label: labelFn(key),
+      value,
+      color:
+        colorFn?.(key, i) ||
+        DASHBOARD_CHART_COLORS[
+          i % DASHBOARD_CHART_COLORS.length
+        ],
+    }));
+}
+
+function inferLegalForm(client) {
+  if (client.formeJuridique) {
+    return client.formeJuridique;
+  }
+
+  const text =
+    `${client.nom || ""} ${client.raisonSociale || ""}`
+      .toUpperCase();
+
+  const forms = [
+    "SASU",
+    "SARL",
+    "EURL",
+    "SAS",
+    "SCI",
+    "SELARL",
+    "SNC",
+    "SA",
+  ];
+
+  return (
+    forms.find(
+      (f) => new RegExp(`\\b${f}\\b`).test(text)
+    ) || "Non renseignée"
+  );
+}
+/* ============================================================
    DASHBOARD
    ============================================================ */
 
@@ -2516,7 +2912,16 @@ function ValidationDossierTab({ client, onUpdate, me }) {
   </div>;
 }
 
-function Dashboard({ myClients, tasks, me, meRole, onOpenClient, setView, team, onSuperviseClick }) {
+function Dashboard({
+  myClients,
+  tasks,
+  me,
+  meRole,
+  onOpenClient,
+  setView,
+  team,
+  onSuperviseClick
+}) {
   const counts = computeCounts(myClients);
   const anomalies = useMemo(() => detectAllAnomalies(myClients), [myClients]);
   const criticalAnomalies = anomalies.filter((a) => a.gravite === "haute");
@@ -2550,8 +2955,128 @@ function Dashboard({ myClients, tasks, me, meRole, onOpenClient, setView, team, 
     if (isTvaLate(c)) byCollab[key].tvaAlert += 1;
   });
 
-  const today = new Date();
-  const dateStr = today.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  const sectorItems = useMemo(
+  () =>
+    buildDistribution(
+      myClients,
+      (c) =>
+        c.secteur ||
+        classifyActivite(c.activite),
+      (key) =>
+        SECTEURS_ACTIVITE.find(
+          (s) => s.id === key
+        )?.label || "Non classé",
+      (key) =>
+        SECTEURS_ACTIVITE.find(
+          (s) => s.id === key
+        )?.color
+    ),
+  [myClients]
+);
+
+const legalItems = useMemo(
+  () =>
+    buildDistribution(
+      myClients,
+      inferLegalForm,
+      (key) => key
+    ),
+  [myClients]
+);
+
+const statusItems = useMemo(
+  () =>
+    buildDistribution(
+      myClients,
+      (c) =>
+        c.statutDossier || "actif",
+      (key) =>
+        ({
+          actif: "Actifs",
+          transfert: "En transfert",
+          inactif: "Inactifs",
+        }[key] || key),
+      (key) =>
+        ({
+          actif: T.green,
+          transfert: T.amber,
+          inactif: T.inkMuted,
+        }[key])
+    ),
+  [myClients]
+);
+
+const tvaItems = useMemo(() => {
+  const key = currentMonthKey();
+
+  const relevant = myClients.filter(
+    (c) =>
+      c.tvaRegime &&
+      c.tvaRegime !== "FRANCHISE"
+  );
+
+  const counts = {
+    OK: 0,
+    FAIT: 0,
+    RETARD: 0,
+    ATTENTE: 0,
+    NA: 0,
+  };
+
+  relevant.forEach((c) => {
+    const status =
+      effectiveTvaStatus(c, key);
+
+    if (status === "OK") counts.OK++;
+    else if (status === "FAIT") counts.FAIT++;
+    else if (status === "RETARD") counts.RETARD++;
+    else if (status === "NA") counts.NA++;
+    else counts.ATTENTE++;
+  });
+
+  return [
+    {
+      label: "Déclarées",
+      value: counts.OK,
+      color: T.green,
+    },
+    {
+      label: "Préparées",
+      value: counts.FAIT,
+      color: T.amber,
+    },
+    {
+      label: "En retard",
+      value: counts.RETARD,
+      color: T.red,
+    },
+    {
+      label: "En attente",
+      value: counts.ATTENTE,
+      color: T.navy,
+    },
+    {
+      label: "N/A",
+      value: counts.NA,
+      color: T.inkMuted,
+    },
+  ];
+}, [myClients]);
+
+const collaboratorItems = useMemo(
+  () =>
+    buildDistribution(
+      myClients,
+      (c) =>
+        c.collab || "Non assigné",
+      (key) => key,
+      (_key, i) =>
+        DASHBOARD_CHART_COLORS[
+          i % DASHBOARD_CHART_COLORS.length
+        ]
+    ),
+  [myClients]
+);
 
   // Échéances à venir : regroupe les tâches par horizon, avec l'intitulé de la plus proche
   const upcomingGroups = [
@@ -2595,6 +3120,208 @@ function Dashboard({ myClients, tasks, me, meRole, onOpenClient, setView, team, 
         <KpiCard index={2} label="Bilans en retard" value={counts.bilanRetard} icon={FileWarning} tone={counts.bilanRetard ? "red" : "green"} onClick={() => setView("bilans")} linkLabel="Voir les bilans" />
         <KpiCard index={3} label="Accueils incomplets" value={counts.missionIncomplete} icon={ClipboardCheck} tone={counts.missionIncomplete ? "amber" : "green"} onClick={() => setView("mission")} linkLabel="Voir les dossiers" />
       </div>
+      <Reveal index={4}>
+  <div style={{ marginBottom: 18 }}>
+
+    <div
+      style={{
+        display: "flex",
+        alignItems: "end",
+        justifyContent: "space-between",
+        gap: 12,
+        marginBottom: 10,
+      }}
+    >
+      <div>
+        <h2
+          style={{
+            fontFamily: T.serif,
+            fontSize: 15.5,
+            fontWeight: 800,
+            color: T.ink,
+            margin: 0,
+          }}
+        >
+          Répartition des dossiers
+        </h2>
+
+        <p
+          style={{
+            color: T.inkMuted,
+            fontSize: 11,
+            margin: "4px 0 0",
+          }}
+        >
+          Une lecture immédiate du portefeuille par secteur,
+          forme juridique et état d'avancement.
+        </p>
+      </div>
+
+      <button
+        onClick={() => setView("clients")}
+        style={{
+          background: T.navySoft,
+          border: "none",
+          borderRadius: 999,
+          padding: "6px 10px",
+          cursor: "pointer",
+          color: T.navy,
+          fontSize: 10.5,
+          fontWeight: 700,
+        }}
+      >
+        Voir le registre{" "}
+        <ArrowUpRight
+          size={11}
+          style={{ verticalAlign: "middle" }}
+        />
+      </button>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+      <DonutDistribution
+        title="Par secteur d'activité"
+        items={sectorItems}
+        total={myClients.length}
+        icon={Briefcase}
+      />
+
+      <DonutDistribution
+        title="Par formes juridiques"
+        items={legalItems}
+        total={myClients.length}
+        icon={Landmark}
+      />
+
+      <DonutDistribution
+        title="Par statut du dossier"
+        items={statusItems}
+        total={myClients.length}
+        icon={ShieldCheck}
+      />
+
+      <DonutDistribution
+        title="État de la TVA ce mois"
+        items={tvaItems}
+        total={tvaItems.reduce(
+          (n, x) => n + x.value,
+          0
+        )}
+        icon={Receipt}
+      />
+
+    </div>
+
+    <div
+      className="grid grid-cols-1 md:grid-cols-2 gap-4"
+      style={{ marginTop: 16 }}
+    >
+
+      <HorizontalDistribution
+        title="Dossiers par collaborateur"
+        items={collaboratorItems}
+        icon={Users}
+      />
+
+      <Panel
+        title="Indicateurs clés"
+        right={
+          <TrendingUp
+            size={15}
+            color={T.inkMuted}
+          />
+        }
+      >
+        <div className="grid grid-cols-2 gap-2.5">
+
+          {[
+            [
+              "Dossiers actifs",
+              myClients.filter(
+                (c) =>
+                  (c.statutDossier || "actif") ===
+                  "actif"
+              ),
+              T.green,
+            ],
+
+            [
+              "En transfert",
+              myClients.filter(
+                (c) =>
+                  c.statutDossier === "transfert"
+              ),
+              T.amber,
+            ],
+
+            [
+              "TVA en retard",
+              myClients.filter(isTvaLate),
+              T.red,
+            ],
+
+            [
+              "Mission < 100%",
+              myClients.filter((c) => {
+                const m =
+                  missionCompletion(c);
+
+                return m && m.pct < 100;
+              }),
+              T.navy,
+            ],
+          ].map(
+            ([label, list, color]) => (
+              <div
+                key={label}
+                style={{
+                  padding: "12px 13px",
+                  borderRadius: 12,
+                  background: T.paper,
+                  border: `1px solid ${T.line}`,
+                }}
+              >
+                <div
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: 99,
+                    background: color,
+                    marginBottom: 9,
+                  }}
+                />
+
+                <div
+                  style={{
+                    fontFamily: T.serif,
+                    fontWeight: 800,
+                    fontSize: 21,
+                    color: T.ink,
+                  }}
+                >
+                  {list.length}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    color: T.inkMuted,
+                    marginTop: 3,
+                  }}
+                >
+                  {label}
+                </div>
+              </div>
+            )
+          )}
+
+        </div>
+      </Panel>
+
+    </div>
+  </div>
+</Reveal>
 
       <div style={{ marginBottom: 18 }}>
         <Panel index={4} title="À surveiller" right={
@@ -2820,7 +3547,24 @@ function EmptyNote({ text }) { return <div className="px-1 py-4 text-inkmuted te
 /* ============================================================
    CLIENTS REGISTRY
    ============================================================ */
-function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, setRoleFilter, regimeFilter, setRegimeFilter, me, collabQuickFilter, setCollabQuickFilter, selected, setSelected, onAdd, onUpdate, onImport }) {
+function ClientsRegistry({
+  clients,
+  allClients,
+  search,
+  setSearch,
+  roleFilter,
+  setRoleFilter,
+  regimeFilter,
+  setRegimeFilter,
+  me,
+  collabQuickFilter,
+  setCollabQuickFilter,
+  selected,
+  setSelected,
+  onAdd,
+  onUpdate,
+  onImport
+}) {
   const [statutFilter, setStatutFilter] = useState("actif");
   const baseFiltered = useMemo(() => filterClients(clients, search, roleFilter, me, regimeFilter, statutFilter), [clients, search, roleFilter, me, regimeFilter, statutFilter]);
   // Filtre rapide posé en cliquant un collaborateur dans "Supervision d'équipe" du dashboard :
@@ -2901,8 +3645,15 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
         statutFilter={statutFilter} setStatutFilter={setStatutFilter} search={search} setSearch={setSearch} />
 
       {/* En-tête colonnes : visible à partir de md, masqué sur mobile (les dossiers s'affichent en cartes empilées) */}
-      <div className="hidden md:grid gap-0" style={{ gridTemplateColumns: "1.8fr 0.9fr 1fr 0.9fr 0.7fr 0.8fr 1.2fr 40px", padding: "0 18px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: T.inkMuted, fontWeight: 600, marginBottom: 10 }}>
-        <div>Dossier</div><div>SIREN</div><div>Rôles</div><div>Clôture</div><div>Régime</div><div>Logiciel</div><div>Statuts</div><div />
+      <div className="hidden md:grid gap-0" style={{ gridTemplateColumns: "1.8fr 0.9fr 1fr 0.9fr 0.7fr 0.8fr 1.2fr 92px", padding: "0 18px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: T.inkMuted, fontWeight: 600, marginBottom: 10 }}>
+        <div>Dossier</div>
+<div>SIREN</div>
+<div>Rôles</div>
+<div>Clôture</div>
+<div>Régime</div>
+<div>Logiciel</div>
+<div>Statuts</div>
+<div>Actions</div>
       </div>
       <div className="flex flex-col gap-2">
         {Object.keys(grouped).sort().map((letter) => (
@@ -2925,7 +3676,7 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
                     {/* Ligne tableau (md et +) */}
                     <div onClick={() => setSelected(c.id)}
                       className={`hoverRow clickable hidden md:grid items-center rounded-xl border px-4 py-3.5 text-xs ${selected === c.id ? "border-accent-deep bg-accent-soft" : "border-line bg-card shadow-xs"} ${isInactif ? "opacity-55" : ""}`}
-                      style={{ gridTemplateColumns: "1.8fr 0.9fr 1fr 0.9fr 0.7fr 0.8fr 1.2fr 40px" }}>
+                      style={{ gridTemplateColumns: "1.8fr 0.9fr 1fr 0.9fr 0.7fr 0.8fr 1.2fr 92px" }}>
                       <div className="font-semibold text-ink flex items-center gap-2">
                         {c.nom}
                       </div>
@@ -2950,7 +3701,19 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
                           </a>
                         )}
                       </div>
-                      <ChevronRight size={15} className="text-inkmuted" />
+                     <div
+  className="flex items-center justify-end gap-1.5"
+  onClick={(e) => e.stopPropagation()}
+>
+  <button
+    title="Ouvrir"
+    onClick={() => setSelected(c.id)}
+    className="w-7 h-7 rounded-lg border border-line bg-white text-inkmuted hover:text-accent hover:border-accent inline-flex items-center justify-center"
+  >
+    <Eye size={13} />
+  </button>
+
+</div>
                     </div>
                     {/* Carte empilée (mobile) */}
                     <div onClick={() => setSelected(c.id)}
@@ -2970,10 +3733,14 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
                           </a>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {statutBadge}
-                        {alertBadge}
-                      </div>
+                      <div className="flex items-center justify-between gap-2">
+
+  <div className="flex items-center gap-1.5 flex-wrap">
+    {statutBadge}
+    {alertBadge}
+  </div>
+
+</div>
                     </div>
                   </Reveal>
                 );
@@ -2995,7 +3762,17 @@ function ClientsRegistry({ clients, allClients, search, setSearch, roleFilter, s
    Remplace l'ancien tiroir latéral : le dossier s'ouvre dans un
    onglet de la barre du haut, comme "AC INVEST" chez MyUnisoft.
    ============================================================ */
-function ClientEditorPage({ client, team, me, meId, portefeuilleId, onUpdate, onClose, setView }) {
+function ClientEditorPage({
+  client,
+  team,
+  me,
+  meId,
+  portefeuilleId,
+  onUpdate,
+  onDelete,
+  onClose,
+  setView
+}) {
   const [tab, setTab] = useState("infos");
   // Brouillon local : toutes les modifications restent ici tant qu'on n'a pas cliqué "Enregistrer".
   // Reset uniquement quand on change de dossier (changement de client.id), pas à chaque frappe.
@@ -3075,6 +3852,41 @@ function ClientEditorPage({ client, team, me, meId, portefeuilleId, onUpdate, on
                 </button>
               </>
             )}
+            {onDelete && (
+  <button
+    onClick={async () => {
+      if (
+        !confirm(
+          `Supprimer définitivement le dossier « ${client.nom} » ?\n\nCette action est irréversible.`
+        )
+      ) {
+        return;
+      }
+
+      const ok = await onDelete(client.id);
+
+      if (ok) {
+        onClose();
+      }
+    }}
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      background: T.redSoft,
+      border: "1px solid #FECACA",
+      borderRadius: 9,
+      padding: "7px 12px",
+      cursor: "pointer",
+      color: T.red,
+      fontSize: 12,
+      fontWeight: 700,
+    }}
+  >
+    <Trash2 size={14} />
+    Supprimer
+  </button>
+)}
             <button onClick={handleClose} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${T.line}`, borderRadius: 9, padding: "7px 12px", cursor: "pointer", color: T.inkMuted, fontSize: 12 }}>
               <X size={14} /> Fermer l'onglet
             </button>
