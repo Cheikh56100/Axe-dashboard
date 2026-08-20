@@ -47,8 +47,9 @@ const RULES = [
     code: "bilan_tres_en_retard",
     gravite: "haute",
     test: (c) => {
-      if (!c.dateCloture || !c.bilan?.nonFinalise) return false;
+      if (!c.dateCloture || typeof c.dateCloture !== "string" || !c.bilan?.nonFinalise) return false;
       const [y, m, d] = c.dateCloture.split("-").map(Number);
+      if (!y || !m || !d) return false;
       const limite = new Date(y, m - 1 + 6, d); // clôture + 6 mois = alerte forte
       return new Date() > limite;
     },
