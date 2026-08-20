@@ -654,17 +654,20 @@ function parseClientsExcelFile(file) {
             if (key === "tvaExig") v = v === "" ? "" : parseInt(v, 10) || "";
             if (typeof v === "string") v = v.trim();
             // dans parseClientsExcelFile, juste après la ligne : if (typeof v === "string") v = v.trim();
+// dans parseClientsExcelFile, juste après la ligne : if (typeof v === "string") v = v.trim();
 if (key === "siren" && v !== "") v = String(v).trim();
-            out[key] = v;
-          });
-          return out;
-        }).filter((r) => r.nom || r.siren);
-        resolve(rows);
-      } catch (err) { reject(err); }
-    };
-    reader.readAsArrayBuffer(file);
-  });
+if (key === "dateCloture" && v !== "") {
+  if (v instanceof Date) {
+    v = v.toISOString().slice(0, 10);
+  } else if (typeof v === "number") {
+    // numéro de série Excel -> date JS
+    const d = XLSX.SSF.parse_date_code(v);
+    v = `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
+  } else if (typeof v === "string") {
+    v = v.trim(); // déjà au bon format, on garde tel quel
+  }
 }
+out[key] = v;
 
 /* ============================================================
    STATUT TVA EFFECTIF
