@@ -358,14 +358,15 @@ function currentMonthKey() { return MOIS_ORDER[new Date().getMonth()]; }
 function previousMonthKey() { return MOIS_ORDER[(new Date().getMonth() + 11) % 12]; }
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function fmtFR(iso) {
-  if (!iso) return "—";
+  if (!iso || typeof iso !== "string") return "—";
   const [y, m, d] = iso.split("-");
   if (!y || !m || !d) return iso;
   return `${d}/${m}/${y}`;
 }
 function addMonthsISO(iso, months) {
-  if (!iso) return null;
+  if (!iso || typeof iso !== "string") return null;
   const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return null;
   const dt = new Date(y, m - 1 + months, d);
   return dt.toISOString().slice(0, 10);
 }
@@ -810,33 +811,39 @@ function computeFiscalEvents(clients) {
       });
     }
     // Clôture d'exercice
-    if (c.dateCloture) {
+    if (c.dateCloture && typeof c.dateCloture === "string") {
       const [cy, cm, cd] = c.dateCloture.split("-").map(Number);
-      events.push({
-        id: `${c.id}-cloture`, client: c, category: "Clôture",
-        label: "Clôture d'exercice", date: new Date(cy, cm - 1, cd), done: false, tone: "neutral",
-      });
-      // Bilan (échéance approximative : clôture + 3 mois) si non finalisé
-      if (c.bilan?.nonFinalise) {
-        const echeance = addMonthsISO(c.dateCloture, 3);
-        const [by, bm, bd] = echeance.split("-").map(Number);
+      if (cy && cm && cd) {
         events.push({
-          id: `${c.id}-bilan`, client: c, category: "Bilan",
-          label: "Dépôt du bilan", date: new Date(by, bm - 1, bd), done: false, tone: "red",
+          id: `${c.id}-cloture`, client: c, category: "Clôture",
+          label: "Clôture d'exercice", date: new Date(cy, cm - 1, cd), done: false, tone: "neutral",
         });
+        // Bilan (échéance approximative : clôture + 3 mois) si non finalisé
+        if (c.bilan?.nonFinalise) {
+          const echeance = addMonthsISO(c.dateCloture, 3);
+          if (echeance) {
+            const [by, bm, bd] = echeance.split("-").map(Number);
+            events.push({
+              id: `${c.id}-bilan`, client: c, category: "Bilan",
+              label: "Dépôt du bilan", date: new Date(by, bm - 1, bd), done: false, tone: "red",
+            });
+          }
+        }
       }
     }
     // AGE/AGO — approbation ~6 mois après clôture si non tenue
-    if (c.dateCloture) {
+    if (c.dateCloture && typeof c.dateCloture === "string") {
       const latestYear = Object.keys(c.ageAgoHistory || {}).sort((a, b) => b - a)[0];
       const y = latestYear ? c.ageAgoHistory[latestYear] : null;
       if (y && !y.ago) {
         const echeance = addMonthsISO(c.dateCloture, 6);
-        const [ay, am, ad] = echeance.split("-").map(Number);
-        events.push({
-          id: `${c.id}-ago-${latestYear}`, client: c, category: "AGO",
-          label: `Approbation des comptes ${latestYear}`, date: new Date(ay, am - 1, ad), done: false, tone: "amber",
-        });
+        if (echeance) {
+          const [ay, am, ad] = echeance.split("-").map(Number);
+          events.push({
+            id: `${c.id}-ago-${latestYear}`, client: c, category: "AGO",
+            label: `Approbation des comptes ${latestYear}`, date: new Date(ay, am - 1, ad), done: false, tone: "amber",
+          });
+        }
       }
     }
   });
