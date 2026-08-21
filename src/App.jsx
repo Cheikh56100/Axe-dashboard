@@ -35,10 +35,21 @@ const T = {
   radius: 16, radiusSm: 12, radiusLg: 20,
 };
 
+/* Regroupement des pièces du Dossier Permanent (cf. classeur Excel du cabinet) :
+   source unique utilisée à la fois par la Progression de l'accueil (fiche client)
+   et par tous les compteurs du tableau de bord (Accueils incomplets, etc.). */
+const MISSION_GROUPS = [
+  { title: "Identité & statuts", keys: ["KBIS", "Statuts", "CNI dirigeants", "CNI associés"] },
+  { title: "Cadrage de la mission", keys: ["Notes entrée mission / Devizen", "Acceptation mission", "LM à jour"] },
+  { title: "Conformité & suivi", keys: ["LAB / Kanta / Devizen à jour"] },
+  { title: "Clôture du dossier", keys: ["Fiche client", "Bouclage"] },
+];
+const MISSION_ALL_KEYS = MISSION_GROUPS.flatMap((g) => g.keys);
+
 /* ============================================================
    SEED DATA — extrait du fichier Excel de suivi du cabinet
    ============================================================ */
-const RAW_SEED_CLIENTS = [{"nom":"A&D RESTOS","siren":"81276334","logiciel":"MYUNISOFT","collab":"Cheikh","tvaRegime":"CA12","tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"AC INVEST","siren":"925320210","logiciel":"MYUNISOFT","collab":"Jacques","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"AD SOLUTION","siren":"942467515","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"AE BAT","siren":"931778112","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"ALLO SOS MOTO","siren":"488698960","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA3","tvaExig":19,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"ALPHA DIGITAL","siren":"920603560","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"AMS PLOMBERIE","siren":"917541906","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"APEL","siren":"326627247","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":19,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"ARSA","siren":"954016481","logiciel":"QUADRA","collab":"Jacques","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"ATELIER GOURMAND","siren":"84531968","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"ATI INVEST","siren":"927855247","logiciel":"MYUNISOFT","collab":"Jacques","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"AU COIN DU PAIN","siren":"993062835","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"BACKSTAGE BEAUTY GROUP","siren":"853273522","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"BANGLA.COM","siren":"804359362","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"BELARBI ABDALLAH","siren":"530122589","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"BELARBI ABDELKAOUI","siren":"431443852","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"BENGAL COIFFURE","siren":"830473351","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"FEB","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"BHUVI BEAUTE","siren":"851770354","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"FEB","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"BLAST","siren":"831893698","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"FEB","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"BLUE SECURITY","siren":"929357168","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"BOUCHERIE SERAS","siren":"930591714","logiciel":"MYUNISOFT","collab":"Jacques","tvaRegime":"TRIM","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"CAFFE ITALIA","siren":"790500912","logiciel":"MYUNISOFT","collab":"Jacques","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"CELIA","siren":"923210215","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"CENTRAL'AUTO","siren":"891458457","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"CHARLOTTE FRANCISCO","siren":"819855727","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"CHATSN TRANSPORT BILAN 2025","siren":"789814399","logiciel":"QUADRA","collab":"Jacques","tvaRegime":"CA3","tvaExig":20,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"DAKAROIS KITCHEN","siren":"981110026","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"TRIM","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"DAVIDSEN","siren":"849091400","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"FEB","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"DESTOCK PIECES AUTO LE PERREUX","siren":"811969153","logiciel":"","collab":"Cheikh","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"DIALLO KAMION","siren":"809583669","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"FEB","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"DIAMOND SUSHI","siren":"890451271","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"ECO NOISY TRANSPORT BILAN 2025","siren":"850096587","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"ENERGIA","siren":"..","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"ERATOMBE","siren":"849495742","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"EVE SECURITY","siren":"504487216","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":20,"tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"EXTERNALIS-CORPORATION","siren":"853414910","logiciel":"","collab":"Cheikh","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"FAIM DE SEMAINE","siren":"898044110","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"FBA BAT","siren":"538695313","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"FOURNIL JEAN XXIII","siren":"893192138","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"GALLERY BOUNAN CH","siren":"803649110","logiciel":"QUADRA","collab":"Jacques","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"GROUPE PNS","siren":"791864317","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"GTM","siren":"933355679","logiciel":"","collab":"Cheikh","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"GUT HEALTH & WELLNESS","siren":"912855350","logiciel":"MYUNISOFT","collab":"Cheikh","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"HOLDING RAZA","siren":"939739967","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"I PRO BATIMENT","siren":"931787204","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"INIT SERVICES","siren":"941381568","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"KAILEY RENOVATION","siren":"842455537","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"KD","siren":"884824566","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"KHOUJABAT","siren":"894352939","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"LA BONNE EPOQUE","siren":"833393598","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"LE CENTRE MEDICAL DE VERDUN","siren":"897427761","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"LE JUSTE PRIX","siren":"934480039","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"LE PETIT MARCHE","siren":"837752062","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"LEMNISCATE SOFTWARE","siren":"830376653","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA3","tvaExig":21,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"L'EPI D'OR","siren":"984628628","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"LMG TRANSPORT","siren":"809937717","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"LO NAFI","siren":"904900065","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"MAC CHICKEN","siren":"843437724","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"TRIM","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"Madame DIALLO KAMION","siren":"809583669","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"FEB","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"MB LAUNDRY","siren":"940912835","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"MED FOOD","siren":"951966795","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"MEYO","siren":"983592122","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"MFC DISTRIBUTION","siren":"989941216","logiciel":"MYUNISOFT","collab":"Jacques","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"MIX TRAVAUX IDF","siren":"840772172","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"MS TRANS (MTRANS SERVICES","siren":"893029538","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"MTP HOLDING","siren":"978063147","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"MY GLOBAL","siren":"922568092","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"NETEN","siren":"511556193","logiciel":"QUADRA","collab":"Soli","tvaRegime":"TRIM","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"NEW STAR HOLDING INTERNATIONAL","siren":"907566871","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"NIA CONSEILS BILAN 2025","siren":"914568399","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"NICK SERVICES","siren":"512395823","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"NIRALI","siren":"819586017","logiciel":"QUADRA","collab":"Soli","tvaRegime":"FEB","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"NISHA ESTHETIQUE","siren":"880336128","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"FEB","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"O DELICE","siren":"..","logiciel":"","collab":"Cheikh","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"ON EST LA","siren":"929695120","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"OPTIMUS TECHNOLOGIES","siren":"..","logiciel":"","collab":"Cheikh","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"OZONE HYGIENE ENVIRONNEMENT","siren":"..","logiciel":"","collab":"Cheikh","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"PARIS CASH AND CARRY","siren":"803981943","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":21,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"PERI ALIMENTATION","siren":"797918489","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":21,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"PLACE COLETTE","siren":"928971233","logiciel":"MYUNISOFT","collab":"Cheikh","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"POWERFIT","siren":"83083017","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"RAMY 37","siren":"884284324","logiciel":"QUADRA","collab":"Jacques","tvaRegime":"CA3","tvaExig":24,"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"RED LIFE FRANCE","siren":"921174686","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"RED LIFE HOLDING","siren":"919332106","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"REPAIR MASTER","siren":"103229209","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"REPON SERGE AGRICULTURE","siren":"348050287","logiciel":"QUADRA","collab":"Cheikh","tvaRegime":"TRIM","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"SABP","siren":"..","logiciel":"","collab":"Cheikh","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"SAINT AMBROISE SAS","siren":"920863982","logiciel":"MYUNISOFT","collab":"Jacques","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"SAISANTHU SOCIETE DE NETTOYAGE","siren":"940616766","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"FEB","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"SCI KAMY TEAM","siren":"883778268","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"SCI LES MANOS","siren":"499319796","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"sci p immo","siren":"825254378","logiciel":"QUADRA","collab":"Soli","tvaRegime":"TRIM","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"SCI SHAANA","siren":"940587819","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"SHAH JALAL 76","siren":"920826591","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"SHIV-SAI","siren":"534331368","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":19,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"SKYTECH","siren":"922167713","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"SPEKCOM","siren":"788795631","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":20,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"STARTED FROM THE BOTTOM FACILITY SERVICES","siren":"832559884","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"STEEL PAINT","siren":"530937754","logiciel":"QUADRA","collab":"Cheikh","tvaRegime":"CA3","tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"SUSHI KID","siren":"793336025","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":21,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"système automatique et securité","siren":"838588929","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"TIROUCHE Sofiane","siren":"812371276","logiciel":"QUADRA","collab":"Soli","tvaRegime":"FEB","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"tms concept","siren":"883337503","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"TRANS TP IDF","siren":"..","logiciel":"","collab":"Cheikh","tvaRegime":"CA12","tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"TRANSPORT FRET LOGISTIQUE","siren":"..","logiciel":"","collab":"Cheikh","tvaRegime":"CA12","tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"TSHI INVEST","siren":"927452532","logiciel":"MYUNISOFT","collab":"Jacques","tvaRegime":"CA12","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"WANDEE","siren":"833083546","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}},{"nom":"ZIANIDES","siren":"844162396","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"FEB","mission":{"Acceptation mission":false,"Lettre reprise":false,"LAB":false,"Fiche client":false,"Lettre mission":false,"Mandat":false,"Attestation bilan":false}}]
+const RAW_SEED_CLIENTS = [{"nom":"A&D RESTOS","siren":"81276334","logiciel":"MYUNISOFT","collab":"Cheikh","tvaRegime":"CA12","tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"AC INVEST","siren":"925320210","logiciel":"MYUNISOFT","collab":"Jacques","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"AD SOLUTION","siren":"942467515","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"AE BAT","siren":"931778112","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"ALLO SOS MOTO","siren":"488698960","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA3","tvaExig":19,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"ALPHA DIGITAL","siren":"920603560","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"AMS PLOMBERIE","siren":"917541906","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"APEL","siren":"326627247","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":19,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"ARSA","siren":"954016481","logiciel":"QUADRA","collab":"Jacques","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"ATELIER GOURMAND","siren":"84531968","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"ATI INVEST","siren":"927855247","logiciel":"MYUNISOFT","collab":"Jacques","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"AU COIN DU PAIN","siren":"993062835","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"BACKSTAGE BEAUTY GROUP","siren":"853273522","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"BANGLA.COM","siren":"804359362","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"BELARBI ABDALLAH","siren":"530122589","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"BELARBI ABDELKAOUI","siren":"431443852","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"BENGAL COIFFURE","siren":"830473351","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"FEB","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"BHUVI BEAUTE","siren":"851770354","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"FEB","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"BLAST","siren":"831893698","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"FEB","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"BLUE SECURITY","siren":"929357168","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"BOUCHERIE SERAS","siren":"930591714","logiciel":"MYUNISOFT","collab":"Jacques","tvaRegime":"TRIM","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"CAFFE ITALIA","siren":"790500912","logiciel":"MYUNISOFT","collab":"Jacques","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"CELIA","siren":"923210215","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"CENTRAL'AUTO","siren":"891458457","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"CHARLOTTE FRANCISCO","siren":"819855727","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"CHATSN TRANSPORT BILAN 2025","siren":"789814399","logiciel":"QUADRA","collab":"Jacques","tvaRegime":"CA3","tvaExig":20,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"DAKAROIS KITCHEN","siren":"981110026","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"TRIM","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"DAVIDSEN","siren":"849091400","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"FEB","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"DESTOCK PIECES AUTO LE PERREUX","siren":"811969153","logiciel":"","collab":"Cheikh","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"DIALLO KAMION","siren":"809583669","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"FEB","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"DIAMOND SUSHI","siren":"890451271","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"ECO NOISY TRANSPORT BILAN 2025","siren":"850096587","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"ENERGIA","siren":"..","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"ERATOMBE","siren":"849495742","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"EVE SECURITY","siren":"504487216","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":20,"tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"EXTERNALIS-CORPORATION","siren":"853414910","logiciel":"","collab":"Cheikh","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"FAIM DE SEMAINE","siren":"898044110","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"FBA BAT","siren":"538695313","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"FOURNIL JEAN XXIII","siren":"893192138","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"GALLERY BOUNAN CH","siren":"803649110","logiciel":"QUADRA","collab":"Jacques","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"GROUPE PNS","siren":"791864317","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"GTM","siren":"933355679","logiciel":"","collab":"Cheikh","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"GUT HEALTH & WELLNESS","siren":"912855350","logiciel":"MYUNISOFT","collab":"Cheikh","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"HOLDING RAZA","siren":"939739967","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"I PRO BATIMENT","siren":"931787204","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"INIT SERVICES","siren":"941381568","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"KAILEY RENOVATION","siren":"842455537","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"KD","siren":"884824566","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"KHOUJABAT","siren":"894352939","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"LA BONNE EPOQUE","siren":"833393598","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"LE CENTRE MEDICAL DE VERDUN","siren":"897427761","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"LE JUSTE PRIX","siren":"934480039","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"LE PETIT MARCHE","siren":"837752062","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"LEMNISCATE SOFTWARE","siren":"830376653","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA3","tvaExig":21,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"L'EPI D'OR","siren":"984628628","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"LMG TRANSPORT","siren":"809937717","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"LO NAFI","siren":"904900065","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"MAC CHICKEN","siren":"843437724","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"TRIM","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"Madame DIALLO KAMION","siren":"809583669","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"FEB","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"MB LAUNDRY","siren":"940912835","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"MED FOOD","siren":"951966795","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"MEYO","siren":"983592122","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"MFC DISTRIBUTION","siren":"989941216","logiciel":"MYUNISOFT","collab":"Jacques","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"MIX TRAVAUX IDF","siren":"840772172","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"MS TRANS (MTRANS SERVICES","siren":"893029538","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"MTP HOLDING","siren":"978063147","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"MY GLOBAL","siren":"922568092","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"NETEN","siren":"511556193","logiciel":"QUADRA","collab":"Soli","tvaRegime":"TRIM","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"NEW STAR HOLDING INTERNATIONAL","siren":"907566871","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"NIA CONSEILS BILAN 2025","siren":"914568399","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"NICK SERVICES","siren":"512395823","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"NIRALI","siren":"819586017","logiciel":"QUADRA","collab":"Soli","tvaRegime":"FEB","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"NISHA ESTHETIQUE","siren":"880336128","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"FEB","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"O DELICE","siren":"..","logiciel":"","collab":"Cheikh","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"ON EST LA","siren":"929695120","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"OPTIMUS TECHNOLOGIES","siren":"..","logiciel":"","collab":"Cheikh","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"OZONE HYGIENE ENVIRONNEMENT","siren":"..","logiciel":"","collab":"Cheikh","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"PARIS CASH AND CARRY","siren":"803981943","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaExig":21,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"PERI ALIMENTATION","siren":"797918489","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":21,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"PLACE COLETTE","siren":"928971233","logiciel":"MYUNISOFT","collab":"Cheikh","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"POWERFIT","siren":"83083017","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"RAMY 37","siren":"884284324","logiciel":"QUADRA","collab":"Jacques","tvaRegime":"CA3","tvaExig":24,"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"RED LIFE FRANCE","siren":"921174686","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"RED LIFE HOLDING","siren":"919332106","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"REPAIR MASTER","siren":"103229209","logiciel":"MYUNISOFT","collab":"Soli","tvaRegime":"CA3","tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"REPON SERGE AGRICULTURE","siren":"348050287","logiciel":"QUADRA","collab":"Cheikh","tvaRegime":"TRIM","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"SABP","siren":"..","logiciel":"","collab":"Cheikh","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"SAINT AMBROISE SAS","siren":"920863982","logiciel":"MYUNISOFT","collab":"Jacques","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"SAISANTHU SOCIETE DE NETTOYAGE","siren":"940616766","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"FEB","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"SCI KAMY TEAM","siren":"883778268","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"SCI LES MANOS","siren":"499319796","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"sci p immo","siren":"825254378","logiciel":"QUADRA","collab":"Soli","tvaRegime":"TRIM","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"SCI SHAANA","siren":"940587819","logiciel":"QUADRA","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"SHAH JALAL 76","siren":"920826591","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"SHIV-SAI","siren":"534331368","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":19,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"SKYTECH","siren":"922167713","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"SPEKCOM","siren":"788795631","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":20,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"STARTED FROM THE BOTTOM FACILITY SERVICES","siren":"832559884","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"STEEL PAINT","siren":"530937754","logiciel":"QUADRA","collab":"Cheikh","tvaRegime":"CA3","tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"SUSHI KID","siren":"793336025","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":21,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"système automatique et securité","siren":"838588929","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"TIROUCHE Sofiane","siren":"812371276","logiciel":"QUADRA","collab":"Soli","tvaRegime":"FEB","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"tms concept","siren":"883337503","logiciel":"QUADRA","collab":"Soli","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"TRANS TP IDF","siren":"..","logiciel":"","collab":"Cheikh","tvaRegime":"CA12","tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"TRANSPORT FRET LOGISTIQUE","siren":"..","logiciel":"","collab":"Cheikh","tvaRegime":"CA12","tvaMois":{"Jan":"NA","Fév":"NA","Mar":"NA","Avr":"NA","Mai":"NA","Juin":"NA","Juil":"NA","Août":"NA","Sept":"NA","Oct":"NA","Nov":"NA","Déc":"NA"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"TSHI INVEST","siren":"927452532","logiciel":"MYUNISOFT","collab":"Jacques","tvaRegime":"CA12","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"WANDEE","siren":"833083546","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"CA3","tvaExig":24,"tvaMois":{"Jan":"OK","Fév":"OK","Mar":"OK","Avr":"OK","Mai":"OK","Juin":"OK","Juil":"FAIT"},"mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}},{"nom":"ZIANIDES","siren":"844162396","logiciel":"MYUNISOFT","collab":"Emilie","tvaRegime":"FEB","mission":{"KBIS":false,"Statuts":false,"CNI dirigeants":false,"CNI associés":false,"Notes entrée mission / Devizen":false,"Acceptation mission":false,"LM à jour":false,"LAB / Kanta / Devizen à jour":false,"Bouclage":false,"Fiche client":false}}]
 ;
 
 const PALETTE = ["#6366F1", "#10B981", "#F97316", "#EC4899", "#06B6D4", "#8B5CF6", "#F59E0B", "#14B8A6", "#F43F5E", "#3B82F6"];
@@ -357,6 +368,12 @@ const TVA_PERIODICITE_LABELS = { mensuelle: "Mensuelle", trimestrielle: "Trimest
 function currentMonthKey() { return MOIS_ORDER[new Date().getMonth()]; }
 function previousMonthKey() { return MOIS_ORDER[(new Date().getMonth() + 11) % 12]; }
 function todayISO() { return new Date().toISOString().slice(0, 10); }
+function addYearISO(iso, years = 1) {
+  if (!iso || typeof iso !== "string") return iso;
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return `${String(y + years).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
 function fmtFR(iso) {
   if (!iso || typeof iso !== "string") return "—";
   const [y, m, d] = iso.split("-");
@@ -818,8 +835,8 @@ function computeFiscalEvents(clients) {
           id: `${c.id}-cloture`, client: c, category: "Clôture",
           label: "Clôture d'exercice", date: new Date(cy, cm - 1, cd), done: false, tone: "neutral",
         });
-        // Bilan (échéance approximative : clôture + 3 mois) si non finalisé
-        if (c.bilan?.nonFinalise) {
+        // Bilan (échéance approximative : clôture + 3 mois) si pas encore transmis
+        if (!c.bilan?.transmis) {
           const echeance = addMonthsISO(c.dateCloture, 3);
           if (echeance) {
             const [by, bm, bd] = echeance.split("-").map(Number);
@@ -1016,6 +1033,7 @@ function CabinetApp({ session, onLogout }) {
   const [roleFilter, setRoleFilter] = useState("Tous");
   const [regimeFilter, setRegimeFilter] = useState("Tous");
   const [collabQuickFilter, setCollabQuickFilter] = useState(null); // filtre rapide "clic depuis Supervision d'équipe"
+  const [dashboardFilter, setDashboardFilter] = useState(null);
   const [showAddClient, setShowAddClient] = useState(false);
   const [saveStatus, setSaveStatus] = useState("idle");
   const [openClientTabs, setOpenClientTabs] = useState([]); // [{id, label}]
@@ -1488,7 +1506,10 @@ function CabinetApp({ session, onLogout }) {
     setViewHistory((h) => (v === view ? h : [...h, view]));
     setView(v);
     setActiveClientTab(null);
-    if (v !== "clients") setCollabQuickFilter(null); // le filtre rapide ne doit vivre que sur la vue "clients"
+    if (v !== "clients") {
+      setCollabQuickFilter(null);
+      setDashboardFilter(null);
+    } // les filtres rapides ne vivent que sur la vue "clients"
   };
   const goBack = () => {
     if (activeClientTab) { setActiveClientTab(null); return; } // dans une fiche client → retour à la liste
@@ -1545,12 +1566,14 @@ function CabinetApp({ session, onLogout }) {
               {view === "dashboard" && (
                 <Dashboard myClients={myClients} tasks={myTasks} me={me} meRole={myRole} team={visibleTeam}
                   onOpenClient={(id) => { navTo("clients"); openClientTab(id); }} setView={navTo}
-                  onSuperviseClick={(collab) => { setCollabQuickFilter(collab); navTo("clients"); }} />
+                  onSuperviseClick={(collab) => { setCollabQuickFilter(collab); setDashboardFilter(null); navTo("clients"); }}
+                  onDashboardFilter={(filter) => { setDashboardFilter(filter); setCollabQuickFilter(null); navTo("clients"); }} />
               )}
               {view === "clients" && (
                 <ClientsRegistry clients={myClients} allClients={clients} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter}
                   regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter} me={me}
                   collabQuickFilter={collabQuickFilter} setCollabQuickFilter={setCollabQuickFilter}
+                  dashboardFilter={dashboardFilter} setDashboardFilter={setDashboardFilter}
                   selected={activeClientTab} setSelected={openClientTab} onAdd={() => setShowAddClient(true)}
                   onUpdate={updateClient}
 onImport={importClients} />
@@ -2389,12 +2412,17 @@ function seuilEffectifAlert(effectif) {
   return null;
 }
 function missionCompletion(client) {
-  const m = client.mission; if (!m) return null;
-  const vals = Object.values(m); if (!vals.length) return null;
-  const done = vals.filter(Boolean).length;
-  return { done, total: vals.length, pct: Math.round((done / vals.length) * 100) };
+  const m = client.mission || {};
+  const done = MISSION_ALL_KEYS.filter((k) => m[k]).length;
+  const total = MISSION_ALL_KEYS.length;
+  return { done, total, pct: total ? Math.round((done / total) * 100) : 100 };
 }
-function isBilanLate(client) { return !!(client.bilan && client.bilan.nonFinalise); }
+function isBilanLate(client) {
+  const b = client.bilan || {};
+  if (b.transmis) return false;
+  const echeance = getBilanEcheance(client.dateCloture);
+  return !!(echeance && todayISO() > echeance);
+}
 function computeCounts(clients) {
   const total = clients.length;
   const tvaAlert = clients.filter(isTvaLate).length;
@@ -2501,7 +2529,7 @@ const DASHBOARD_CHART_COLORS = [
   "#22C55E",
 ];
 
-function DonutDistribution({ title, items, total, icon: Icon = CircleDot }) {
+function DonutDistribution({ title, items, total, icon: Icon = CircleDot, onItemClick }) {
   const safeItems = (items || []).filter((x) => Number(x.value) > 0);
 
   const sum = safeItems.reduce(
@@ -2609,11 +2637,16 @@ function DonutDistribution({ title, items, total, icon: Icon = CircleDot }) {
               return (
                 <div
                   key={`${item.label}-${i}`}
+                  onClick={() => onItemClick?.(item)}
+                  className={onItemClick ? "clickable" : ""}
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: 7,
                     minWidth: 0,
+                    cursor: onItemClick ? "pointer" : "default",
+                    padding: "4px 5px",
+                    borderRadius: 8,
                   }}
                 >
                   <span
@@ -2674,6 +2707,7 @@ function HorizontalDistribution({
   title,
   items,
   icon: Icon = Users,
+  onItemClick,
 }) {
   const safe = (items || []).filter(
     (x) => Number(x.value) > 0
@@ -2710,7 +2744,12 @@ function HorizontalDistribution({
               ];
 
             return (
-              <div key={`${item.label}-${i}`}>
+              <div
+                key={`${item.label}-${i}`}
+                onClick={() => onItemClick?.(item)}
+                className={onItemClick ? "clickable" : ""}
+                style={{ cursor: onItemClick ? "pointer" : "default", padding: "4px 5px", borderRadius: 8 }}
+              >
                 <div
                   style={{
                     display: "flex",
@@ -2790,6 +2829,7 @@ function buildDistribution(
   return [...map.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([key, value], i) => ({
+      key,
       label: labelFn(key),
       value,
       color:
@@ -2946,7 +2986,8 @@ function Dashboard({
   onOpenClient,
   setView,
   team,
-  onSuperviseClick
+  onSuperviseClick,
+  onDashboardFilter
 }) {
     const today = new Date();
   const dateStr = today.toLocaleDateString("fr-FR", {
@@ -3068,26 +3109,31 @@ const tvaItems = useMemo(() => {
 
   return [
     {
+      key: "OK",
       label: "Déclarées",
       value: counts.OK,
       color: T.green,
     },
     {
+      key: "FAIT",
       label: "Préparées",
       value: counts.FAIT,
       color: T.amber,
     },
     {
+      key: "RETARD",
       label: "En retard",
       value: counts.RETARD,
       color: T.red,
     },
     {
+      key: "ATTENTE",
       label: "En attente",
       value: counts.ATTENTE,
       color: T.navy,
     },
     {
+      key: "NA",
       label: "N/A",
       value: counts.NA,
       color: T.inkMuted,
@@ -3217,6 +3263,7 @@ const collaboratorItems = useMemo(
         items={sectorItems}
         total={myClients.length}
         icon={Briefcase}
+        onItemClick={(item) => onDashboardFilter?.({ type: "secteur", value: item.key, label: item.label })}
       />
 
       <DonutDistribution
@@ -3224,6 +3271,7 @@ const collaboratorItems = useMemo(
         items={legalItems}
         total={myClients.length}
         icon={Landmark}
+        onItemClick={(item) => onDashboardFilter?.({ type: "formeJuridique", value: item.key, label: item.label })}
       />
 
       <DonutDistribution
@@ -3231,6 +3279,7 @@ const collaboratorItems = useMemo(
         items={statusItems}
         total={myClients.length}
         icon={ShieldCheck}
+        onItemClick={(item) => onDashboardFilter?.({ type: "statut", value: item.key, label: item.label })}
       />
 
       <DonutDistribution
@@ -3241,6 +3290,7 @@ const collaboratorItems = useMemo(
           0
         )}
         icon={Receipt}
+        onItemClick={(item) => onDashboardFilter?.({ type: "tva", value: item.key, label: item.label })}
       />
 
     </div>
@@ -3254,6 +3304,7 @@ const collaboratorItems = useMemo(
         title="Dossiers par collaborateur"
         items={collaboratorItems}
         icon={Users}
+        onItemClick={(item) => onDashboardFilter?.({ type: "collaborateur", value: item.key, label: item.label })}
       />
 
       <Panel
@@ -3269,49 +3320,22 @@ const collaboratorItems = useMemo(
 
           {[
             [
-              "Dossiers actifs",
-              myClients.filter(
-                (c) =>
-                  (c.statutDossier || "actif") ===
-                  "actif"
-              ),
-              T.green,
-            ],
-
-            [
-              "En transfert",
-              myClients.filter(
-                (c) =>
-                  c.statutDossier === "transfert"
-              ),
-              T.amber,
-            ],
-
-            [
-              "TVA en retard",
-              myClients.filter(isTvaLate),
-              T.red,
-            ],
-
-            [
-              "Mission < 100%",
-              myClients.filter((c) => {
-                const m =
-                  missionCompletion(c);
-
-                return m && m.pct < 100;
-              }),
-              T.navy,
-            ],
-          ].map(
-            ([label, list, color]) => (
+              ["Dossiers actifs", myClients.filter((c) => (c.statutDossier || "actif") === "actif"), T.green, { type: "statut", value: "actif", label: "Actifs" }],
+              ["En transfert", myClients.filter((c) => c.statutDossier === "transfert"), T.amber, { type: "statut", value: "transfert", label: "En transfert" }],
+              ["TVA en retard", myClients.filter(isTvaLate), T.red, { type: "tva", value: "RETARD", label: "TVA en retard" }],
+              ["Mission < 100%", myClients.filter((c) => { const m = missionCompletion(c); return m && m.pct < 100; }), T.navy, { type: "missionIncomplete", value: "incomplete", label: "Mission < 100%" }],
+            ].map(
+            ([label, list, color, filter]) => (
               <div
                 key={label}
+                onClick={() => onDashboardFilter?.(filter)}
+                className="clickable"
                 style={{
                   padding: "12px 13px",
                   borderRadius: 12,
                   background: T.paper,
                   border: `1px solid ${T.line}`,
+                  cursor: "pointer",
                 }}
               >
                 <div
@@ -3346,7 +3370,7 @@ const collaboratorItems = useMemo(
                 </div>
               </div>
             )
-          )}
+          )]}
 
         </div>
       </Panel>
@@ -3591,6 +3615,8 @@ function ClientsRegistry({
   me,
   collabQuickFilter,
   setCollabQuickFilter,
+  dashboardFilter,
+  setDashboardFilter,
   selected,
   setSelected,
   onAdd,
@@ -3598,13 +3624,40 @@ function ClientsRegistry({
   onImport
 }) {
   const [statutFilter, setStatutFilter] = useState("actif");
-  const baseFiltered = useMemo(() => filterClients(clients, search, roleFilter, me, regimeFilter, statutFilter), [clients, search, roleFilter, me, regimeFilter, statutFilter]);
-  // Filtre rapide posé en cliquant un collaborateur dans "Supervision d'équipe" du dashboard :
-  // ne montre que les dossiers de CE collaborateur, sous la supervision de l'utilisateur courant (chef de mission).
+  const baseFiltered = useMemo(() => filterClients(clients, search, roleFilter, me, regimeFilter, dashboardFilter ? "tous" : statutFilter), [clients, search, roleFilter, me, regimeFilter, statutFilter, dashboardFilter]);
+
+  const dashboardFiltered = useMemo(() => {
+    if (!dashboardFilter) return baseFiltered;
+    const { type, value } = dashboardFilter;
+    return baseFiltered.filter((c) => {
+      switch (type) {
+        case "secteur":
+          return (c.secteur || classifyActivite(c.activite)) === value;
+        case "formeJuridique":
+          return inferLegalForm(c) === value;
+        case "statut":
+          return (c.statutDossier || "actif") === value;
+        case "tva": {
+          if (!c.tvaRegime || c.tvaRegime === "FRANCHISE") return false;
+          return effectiveTvaStatus(c, currentMonthKey()) === value;
+        }
+        case "collaborateur":
+          return value === "Non assigné" ? !c.collab : c.collab === value;
+        case "missionIncomplete": {
+          const m = missionCompletion(c);
+          return !!m && m.pct < 100;
+        }
+        default:
+          return true;
+      }
+    });
+  }, [baseFiltered, dashboardFilter]);
+
   const filtered = useMemo(() => {
+    if (dashboardFilter) return dashboardFiltered;
     if (!collabQuickFilter) return baseFiltered;
     return baseFiltered.filter((c) => c.chefMission === me && (collabQuickFilter === "Non assigné" ? !c.collab : c.collab === collabQuickFilter));
-  }, [baseFiltered, collabQuickFilter, me]);
+  }, [baseFiltered, dashboardFiltered, dashboardFilter, collabQuickFilter, me]);
   const grouped = useMemo(() => {
     const g = {};
     [...filtered].sort((a, b) => a.nom.localeCompare(b.nom)).forEach((c) => {
@@ -3650,7 +3703,7 @@ function ClientsRegistry({
               {importBusy ? <Loader2 size={14} className="spin" /> : <ArrowUpRight size={14} className="-rotate-90" />}
               <span className="hidden sm:inline">Importer (Excel/CSV)</span>
             </button>
-            <button onClick={() => exportClientsToExcel(allClients || clients)} className="btn-secondary !py-2">
+            <button onClick={() => exportClientsToExcel(filtered, `registre-clients-filtre-${todayISO()}.xlsx`)} className="btn-secondary !py-2">
               <ArrowUpRight size={14} className="rotate-90" /> <span className="hidden sm:inline">Exporter la liste (Excel)</span>
             </button>
             <button onClick={onAdd} className="btn-primary !py-2">
@@ -3663,6 +3716,16 @@ function ClientsRegistry({
             <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: T.navy, background: T.navySoft, padding: "4px 10px 4px 12px", borderRadius: 999 }}>
               Dossiers de {collabQuickFilter}
               <button onClick={() => setCollabQuickFilter && setCollabQuickFilter(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.navy, display: "flex", alignItems: "center", padding: 0 }}>
+                <X size={13} />
+              </button>
+            </span>
+          </div>
+        )}
+        {dashboardFilter && (
+          <div className="flex items-center gap-2 mb-2">
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: T.navy, background: T.navySoft, padding: "4px 10px 4px 12px", borderRadius: 999 }}>
+              Filtre dashboard : {dashboardFilter.label}
+              <button onClick={() => setDashboardFilter && setDashboardFilter(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.navy, display: "flex", alignItems: "center", padding: 0 }}>
                 <X size={13} />
               </button>
             </span>
@@ -4318,6 +4381,16 @@ function TvaTab({ client, onUpdate }) {
       <FieldRow label="Statut courant">
         <Stamped tone={tvaTone(currentStatus)} small>{currentStatus === "RETARD" ? "Retard" : currentStatus === "FAIT" ? "Fait" : currentStatus === "OK" ? "OK" : currentStatus === "NA" ? "N/A" : "—"}</Stamped>
       </FieldRow>
+      <div style={{ height: 14 }} />
+      <Panel title="Paiement de TVA">
+        <PaymentLine
+          label={`TVA ${currentMonthKey()}`}
+          amount={client.tvaPaiements?.[currentMonthKey()]?.montant ?? ""}
+          status={client.tvaPaiements?.[currentMonthKey()]?.statut || "a_payer"}
+          onAmountChange={(value) => onUpdate(client.id, { tvaPaiements: { ...(client.tvaPaiements || {}), [currentMonthKey()]: { ...(client.tvaPaiements?.[currentMonthKey()] || {}), montant: value } } })}
+          onStatusChange={(value) => onUpdate(client.id, { tvaPaiements: { ...(client.tvaPaiements || {}), [currentMonthKey()]: { ...(client.tvaPaiements?.[currentMonthKey()] || {}), statut: value } } })}
+        />
+      </Panel>
       <div style={{ fontSize: 12, color: T.inkMuted, margin: "14px 0 0", lineHeight: 1.6 }}>
         {client.tvaRegime === "CA12"
           ? "Régime CA12 : une seule déclaration annuelle, exigible en Mai N+1."
@@ -4336,6 +4409,17 @@ function BilanTab({ client, onUpdate }) {
   const b = client.bilan || {};
   const patch = (fields) => onUpdate(client.id, { bilan: { ...b, ...fields } });
   const toggle = (field) => patch({ [field]: !b[field] });
+  const toggleTransmission = () => {
+    const next = !b.transmis;
+    if (next && !b.transmis && client.dateCloture) {
+      onUpdate(client.id, {
+        bilan: { ...b, transmis: true, transmisDate: todayISO() },
+        dateCloture: addYearISO(client.dateCloture, 1),
+      });
+      return;
+    }
+    patch({ transmis: false });
+  };
   const echeance = getBilanEcheance(client.dateCloture);
   const statut = getBilanStatut(b, client.dateCloture);
   const enRetard = echeance && todayISO() > echeance && !b.transmis;
@@ -4372,6 +4456,42 @@ function BilanTab({ client, onUpdate }) {
             ))}
           </div>
         </FieldRow>
+        <FieldRow label="Révision de fin de bilan">
+          {(() => {
+            const checklist = b.finBilanChecklist || {};
+            const items = [
+              ["capitauxPropres", "Capitaux propres / capital social"],
+              ["marges", "Marges et variations anormales"],
+              ["cfe", "CFE et comptabilisation"],
+              ["tvaCadrage", "Cadrage de TVA"],
+              ["banque", "Rapprochements bancaires"],
+              ["fournisseurs", "Comptes fournisseurs et soldes anciens"],
+              ["clients", "Comptes clients et créances anciennes"],
+              ["social", "Comptes sociaux, charges et dettes"],
+              ["emprunts", "Emprunts et intérêts"],
+              ["immobilisations", "Immobilisations et amortissements"],
+              ["chargesProduits", "Charges / produits à rattacher"],
+              ["comptesAttente", "Comptes d'attente et comptes divers"],
+              ["impots", "IS/IR, CFE et autres impôts"],
+              ["annexes", "Annexes et éléments de liasse"],
+            ];
+            const done = items.filter(([id]) => checklist[id]).length;
+            return (
+              <div style={{ width: "100%", border: `1px solid ${T.line}`, borderRadius: 10, padding: "9px 11px", background: T.paper }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 7 }}>
+                  <span style={{ fontSize: 11, color: T.inkMuted }}>{done}/{items.length} contrôles réalisés</span>
+                  <Stamped tone={done === items.length ? "green" : "amber"} small>{done === items.length ? "Révision complète" : "À finaliser"}</Stamped>
+                </div>
+                {items.map(([id, label]) => (
+                  <label key={id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 2px", borderBottom: `1px solid ${T.line}`, fontSize: 11.5, color: checklist[id] ? T.inkMuted : T.ink, textDecoration: checklist[id] ? "line-through" : "none", cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!checklist[id]} onChange={() => patch({ finBilanChecklist: { ...checklist, [id]: !checklist[id] } })} />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+            );
+          })()}
+        </FieldRow>
         <FieldRow label="Projet de bilan validé par le client">
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <ToggleBtn on={!!b.valideClient} onClick={() => patch({ valideClient: !b.valideClient, valideClientDate: !b.valideClient ? todayISO() : b.valideClientDate })} />
@@ -4383,7 +4503,7 @@ function BilanTab({ client, onUpdate }) {
         </FieldRow>
         <FieldRow label="Transmis (liasse télétransmise)">
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <ToggleBtn on={!!b.transmis} onClick={() => patch({ transmis: !b.transmis, transmisDate: !b.transmis ? todayISO() : b.transmisDate })} tone="green" />
+            <ToggleBtn on={!!b.transmis} onClick={toggleTransmission} tone="green" />
             {b.transmis && (
               <input type="date" value={b.transmisDate || ""} onChange={(e) => patch({ transmisDate: e.target.value })}
                 style={{ fontFamily: T.mono, fontSize: 12, padding: "4px 7px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card }} />
@@ -4443,10 +4563,41 @@ function ToggleBtn({ on, onClick, tone = "green" }) {
   </button>;
 }
 
+const PAYMENT_STATUS_OPTIONS = [
+  { value: "a_payer", label: "À payer" },
+  { value: "paye", label: "Payé" },
+  { value: "partiellement_paye", label: "Partiellement payé" },
+  { value: "non_concerne", label: "Non concerné" },
+];
+
+function PaymentStatus({ value, onChange }) {
+  return (
+    <select value={value || "a_payer"} onChange={(e) => onChange(e.target.value)}
+      style={{ fontSize: 11.5, padding: "5px 8px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card, minWidth: 145 }}>
+      {PAYMENT_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
+function PaymentLine({ label, amount, status, onAmountChange, onStatusChange }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1.4fr 120px 165px", gap: 10, alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${T.line}` }}>
+      <div style={{ fontSize: 11.5, fontWeight: 600 }}>{label}</div>
+      <input type="number" min="0" step="0.01" value={amount ?? ""} placeholder="Montant" onChange={(e) => onAmountChange(e.target.value)}
+        style={{ fontFamily: T.mono, fontSize: 12, padding: "5px 8px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card, width: "100%", textAlign: "right" }} />
+      <PaymentStatus value={status} onChange={onStatusChange} />
+    </div>
+  );
+}
+
 function AcomptesTab({ client, onUpdate }) {
   const is = client.is || {}; const cfe = client.cfe || {};
   const toggleIs = (f) => onUpdate(client.id, { is: { ...is, [f]: !is[f] } });
   const toggleCfe = (f) => onUpdate(client.id, { cfe: { ...cfe, [f]: !cfe[f] } });
+  const updatePayment = (tax, key, field, value) => {
+    const source = tax === "is" ? is : cfe;
+    onUpdate(client.id, { [tax]: { ...source, paiements: { ...(source.paiements || {}), [key]: { ...(source.paiements?.[key] || {}), [field]: value } } } });
+  };
   const isConcerne = Number(is.montantN1) > 3000;
   const cfeConcerne = Number(cfe.montantN1) > 3000;
   const numInputStyle = { fontFamily: T.mono, fontSize: 12.5, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, width: 110, textAlign: "right" };
@@ -4463,11 +4614,19 @@ function AcomptesTab({ client, onUpdate }) {
           <Stamped tone={isConcerne ? "amber" : "neutral"} small>{isConcerne ? "Concerné (> 3000€)" : "Non concerné"}</Stamped>
         </div>
       </FieldRow>
-      <FieldRow label="Acompte mars"><ToggleBtn on={!!is.mars} onClick={() => toggleIs("mars")} /></FieldRow>
-      <FieldRow label="Acompte juin"><ToggleBtn on={!!is.juin} onClick={() => toggleIs("juin")} /></FieldRow>
-      <FieldRow label="Acompte septembre"><ToggleBtn on={!!is.sept} onClick={() => toggleIs("sept")} /></FieldRow>
-      <FieldRow label="Acompte décembre"><ToggleBtn on={!!is.dec} onClick={() => toggleIs("dec")} /></FieldRow>
-      <FieldRow label="Solde IS"><ToggleBtn on={!!is.solde} onClick={() => toggleIs("solde")} /></FieldRow>
+      <Panel title="Paiements IS">
+        {[
+          ["mars", "Acompte IS — mars"],
+          ["juin", "Acompte IS — juin"],
+          ["sept", "Acompte IS — septembre"],
+          ["dec", "Acompte IS — décembre"],
+          ["solde", "Solde IS"],
+        ].map(([key, label]) => (
+          <PaymentLine key={key} label={label} amount={is.paiements?.[key]?.montant ?? ""} status={is.paiements?.[key]?.statut || (is[key] ? "paye" : "a_payer")}
+            onAmountChange={(v) => updatePayment("is", key, "montant", v)}
+            onStatusChange={(v) => updatePayment("is", key, "statut", v)} />
+        ))}
+      </Panel>
       <h4 style={{ fontFamily: T.serif, fontSize: 13, color: T.navy, margin: "20px 0 8px" }}>CFE</h4>
       <FieldRow label="Montant CFE N-1">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -4481,31 +4640,84 @@ function AcomptesTab({ client, onUpdate }) {
       </FieldRow>
       <FieldRow label="Acompte juin"><ToggleBtn on={!!cfe.juin} onClick={() => toggleCfe("juin")} /></FieldRow>
       <FieldRow label="Solde décembre"><ToggleBtn on={!!cfe.dec} onClick={() => toggleCfe("dec")} /></FieldRow>
+      <div style={{ height: 12 }} />
+      <Panel title="Paiements CFE">
+        {[["juin", "Acompte CFE — juin"], ["dec", "Solde CFE — décembre"]].map(([key, label]) => (
+          <PaymentLine key={key} label={label} amount={cfe.paiements?.[key]?.montant ?? ""} status={cfe.paiements?.[key]?.statut || (cfe[key] ? "paye" : "a_payer")}
+            onAmountChange={(v) => updatePayment("cfe", key, "montant", v)}
+            onStatusChange={(v) => updatePayment("cfe", key, "statut", v)} />
+        ))}
+      </Panel>
     </div>
   );
 }
 
 function MissionTab({ client, onUpdate }) {
   const m = client.mission || {};
-  const keys = Object.keys(m).length ? Object.keys(m) : ["Acceptation mission", "Lettre reprise", "LAB", "Fiche client", "Lettre mission", "Mandat", "Attestation bilan"];
+  const groups = MISSION_GROUPS;
+  const keys = MISSION_ALL_KEYS;
   const toggle = (k) => onUpdate(client.id, { mission: { ...m, [k]: !m[k] } });
   const done = keys.filter((k) => m[k]).length;
+  const total = keys.length;
+
   return (
     <div>
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}>
-          <span style={{ color: T.inkMuted }}>Progression de l'accueil</span><span style={{ fontFamily: T.mono, fontWeight: 600 }}>{done}/{keys.length}</span>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+        <span style={{ fontFamily: T.serif, fontWeight: 700, fontSize: 13.5, color: T.ink }}>Progression de l'accueil</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.inkMuted }}>{done}/{total}</span>
+          <div style={{ width: 92, height: 6, borderRadius: 4, background: T.paperDeep, overflow: "hidden" }}>
+            <div style={{ width: `${total ? (done / total) * 100 : 0}%`, height: "100%", background: T.navy, borderRadius: 4 }} />
+          </div>
         </div>
-        <div style={{ height: 8, borderRadius: 4, background: T.paperDeep, overflow: "hidden" }}><div style={{ width: `${(done / keys.length) * 100}%`, height: "100%", background: T.navy }} /></div>
       </div>
-      {keys.map((k) => (
-        <div key={k} onClick={() => toggle(k)} className="clickable" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", borderBottom: `1px solid ${T.line}` }}>
-          <span style={{ width: 19, height: 19, borderRadius: 5, border: `1.5px solid ${m[k] ? T.green : T.line}`, background: m[k] ? T.green : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            {m[k] && <Check size={13} color="#fff" strokeWidth={3} />}
-          </span>
-          <span style={{ fontSize: 12.5, color: m[k] ? T.inkMuted : T.ink, textDecoration: m[k] ? "line-through" : "none" }}>{k}</span>
-        </div>
-      ))}
+
+      {groups.map((group, gi) => {
+        const groupKeys = group.keys;
+        const groupDone = groupKeys.filter((k) => m[k]).length;
+        const groupTotal = groupKeys.length;
+        const isComplete = groupTotal > 0 && groupDone === groupTotal;
+        const isStarted = groupDone > 0;
+        const isLast = gi === groups.length - 1;
+        return (
+          <div key={group.title} style={{ display: "flex", gap: 16 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+              <div style={{
+                width: 30, height: 30, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                background: isComplete ? T.green : isStarted ? T.navy : T.paperDeep,
+                color: isComplete || isStarted ? "#fff" : T.inkMuted,
+                fontSize: 12, fontWeight: 700, flexShrink: 0,
+                boxShadow: `0 0 0 4px ${isComplete ? T.greenSoft : isStarted ? T.navySoft : "#fff"}`,
+              }}>
+                {isComplete ? <Check size={14} strokeWidth={3} /> : gi + 1}
+              </div>
+              {!isLast && <div style={{ width: 2, flex: 1, background: T.line, margin: "4px 0", minHeight: 26 }} />}
+            </div>
+            <div style={{ flex: 1, paddingBottom: isLast ? 4 : 22 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 9 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{group.title}</span>
+                <span style={{ fontSize: 11, color: T.inkMuted, fontWeight: 600 }}>{groupDone}/{groupTotal}</span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {groupKeys.map((k) => {
+                  const on = !!m[k];
+                  return (
+                    <span key={k} onClick={() => toggle(k)} className="clickable" style={{
+                      display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 20,
+                      fontSize: 12, fontWeight: 600, border: "1px solid transparent",
+                      background: on ? T.greenSoft : T.paperDeep,
+                      color: on ? "#0F7A50" : T.inkMuted,
+                    }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: on ? "#0F7A50" : T.inkMuted, flexShrink: 0 }} />
+                      {k}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -5048,7 +5260,7 @@ function BilanTable({ clients, onUpdate }) {
             <div style={{ flex: 1, fontWeight: 600, fontSize: 12.5, minWidth: 140 }}>{c.nom}</div>
             <span style={{ fontSize: 11.5, color: T.inkMuted }}>Clôture: {fmtFR(c.dateCloture)}</span>
             <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: T.inkMuted }}><input type="checkbox" checked={!!b.finaliseApres} onChange={() => onUpdate(c.id, { bilan: { ...b, finaliseApres: !b.finaliseApres } })} /> finalisé après échéance</label>
-            <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: T.red }}><input type="checkbox" checked={!!b.nonFinalise} onChange={() => onUpdate(c.id, { bilan: { ...b, nonFinalise: !b.nonFinalise } })} /> en retard</label>
+            <Stamped tone={isBilanLate(c) ? "red" : "neutral"} small>{isBilanLate(c) ? "En retard" : "Dans les délais"}</Stamped>
             <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: T.inkMuted }}><input type="checkbox" checked={!!b.courrier} onChange={() => onUpdate(c.id, { bilan: { ...b, courrier: !b.courrier } })} /> courrier classé</label>
           </div>
         );
@@ -5268,25 +5480,6 @@ function RevisionTab({ client, onUpdate, setView }) {
     patch({ banqueMois: { ...banqueMois, [mois]: bankCycle(banqueMois[mois]) } });
   };
 
-  const checklist = rev.finBilanChecklist || {};
-  const revisionItems = [
-    ["capitauxPropres", "Vérifier que les capitaux propres sont cohérents avec le capital social"],
-    ["marges", "Analyser les marges et identifier les variations anormales"],
-    ["cfe", "Vérifier que la CFE est payée et correctement comptabilisée"],
-    ["tvaCadrage", "Effectuer et valider le cadrage de TVA"],
-    ["banque", "Valider les rapprochements bancaires de tous les mois"],
-    ["fournisseurs", "Réviser les comptes fournisseurs et les soldes anciens"],
-    ["clients", "Réviser les comptes clients et les créances anciennes"],
-    ["social", "Contrôler les comptes sociaux, charges et dettes"],
-    ["emprunts", "Contrôler les emprunts, intérêts et tableaux d'amortissement"],
-    ["immobilisations", "Contrôler les immobilisations, amortissements et sorties"],
-    ["chargesProduits", "Rechercher charges/produits à rattacher ou à régulariser"],
-    ["comptesAttente", "Apurer les comptes d'attente et comptes divers"],
-    ["impots", "Contrôler IS/IR, CFE et autres impôts"],
-    ["annexes", "Vérifier les éléments nécessaires aux annexes et à la liasse"],
-  ];
-  const doneCount = revisionItems.filter(([id]) => checklist[id]).length;
-  const toggleCheck = (id) => patch({ finBilanChecklist: { ...checklist, [id]: !checklist[id] } });
 
   return (
     <div>
@@ -5322,24 +5515,7 @@ function RevisionTab({ client, onUpdate, setView }) {
         </button>
       </Panel>
 
-      <div style={{ height: 14 }} />
-      <Panel title="Révision de fin de bilan">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 12, color: T.inkMuted }}>Checklist de finalisation du bilan — {doneCount}/{revisionItems.length} contrôles réalisés.</div>
-          {doneCount < revisionItems.length ? <Stamped tone="amber" small>À finaliser</Stamped> : <Stamped tone="green" small>Révision complète</Stamped>}
-        </div>
-        {revisionItems.map(([id, label]) => (
-          <label key={id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 4px", borderBottom: `1px solid ${T.line}`, fontSize: 12, color: checklist[id] ? T.inkMuted : T.ink, textDecoration: checklist[id] ? "line-through" : "none", cursor: "pointer" }}>
-            <input type="checkbox" checked={!!checklist[id]} onChange={() => toggleCheck(id)} />
-            <span>{label}</span>
-          </label>
-        ))}
-        {doneCount < revisionItems.length && client.dateCloture && (
-          <div style={{ marginTop: 10, padding: "9px 11px", borderRadius: 9, background: T.amberSoft, color: T.amber, fontSize: 11.5 }}>
-            ⚠️ La révision de fin de bilan n'est pas complète : pensez à traiter chaque contrôle avant de finaliser le dossier.
-          </div>
-        )}
-      </Panel>
+
     </div>
   );
 }
@@ -5584,11 +5760,14 @@ function MissionView({ clients, search, roleFilter, setRoleFilter, me, onUpdate 
               </div>
               <div style={{ height: 6, borderRadius: 3, background: T.paperDeep, overflow: "hidden", marginBottom: 8 }}><div style={{ width: `${comp.pct}%`, height: "100%", background: comp.pct === 100 ? T.green : T.navy }} /></div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {Object.entries(c.mission || {}).map(([k, v]) => (
-                  <button key={k} onClick={() => onUpdate(c.id, { mission: { ...c.mission, [k]: !v } })} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                    <Stamped tone={v ? "green" : "neutral"} small>{k}</Stamped>
-                  </button>
-                ))}
+                {MISSION_ALL_KEYS.map((k) => {
+                  const v = !!(c.mission || {})[k];
+                  return (
+                    <button key={k} onClick={() => onUpdate(c.id, { mission: { ...c.mission, [k]: !v } })} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                      <Stamped tone={v ? "green" : "neutral"} small>{k}</Stamped>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           );
@@ -6879,7 +7058,7 @@ function AddClientModal({ team, me, portefeuilleId, onClose, onCreate }) {
       collab, expert, chefMission, formeJuridique: "", capital: "", activite: "",
       tvaRegime: "", tvaExig: "", tvaMois: {}, regimeHistory: [], ageAgoHistory: {}, formeJuridiqueHistory: {},
       corporate: { kyc: { lab: false, mandat: false, choixPA: "", beneficiaireEffectif: false, beneficiaireNom: "" }, kycExtra: [], notes: "" },
-      mission: { "Acceptation mission": false, "Lettre reprise": false, "LAB": false, "Fiche client": false, "Lettre mission": false, "Mandat": false, "Attestation bilan": false },
+      mission: { "KBIS": false, "Statuts": false, "CNI dirigeants": false, "CNI associés": false, "Notes entrée mission / Devizen": false, "Acceptation mission": false, "LM à jour": false, "LAB / Kanta / Devizen à jour": false, "Bouclage": false, "Fiche client": false },
     });
   };
 
