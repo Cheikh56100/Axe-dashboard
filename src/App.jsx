@@ -5420,7 +5420,6 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onRe
             {MOIS_ORDER.map((m) => <th key={m} style={{ ...thStyle, textAlign: "center" }}>{m}</th>)}
           </tr></thead>
           <tbody>
-            // APRÈS
 {filtered.map((c, rowIndex) => {
   const isCa12 = c.tvaRegime === "CA12";
   const isCa3Trim = c.tvaRegime === "CA3" && c.tvaPeriodicite === "trimestrielle";
