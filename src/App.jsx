@@ -7,7 +7,8 @@ import {
   ChevronUp, CalendarDays, CalendarRange, Settings2, Trash2,
   Pencil, ChevronLeft, ShieldCheck, Home, LogOut, Mail, Lock, UserRound,
   Phone, Briefcase, UserCheck, Wallet, ShieldAlert, Menu, Bell, Clock3, ArrowLeft, ExternalLink,
-  Eye, EyeOff, Copy, KeyRound, Download, MapPin, Contact
+  Eye, EyeOff, Copy, KeyRound, Download, MapPin, Contact, Scale,
+  CheckCircle2, XCircle
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { motion } from "framer-motion";
@@ -35,9 +36,7 @@ const T = {
   radius: 16, radiusSm: 12, radiusLg: 20,
 };
 
-/* Regroupement des pièces du Dossier Permanent (cf. classeur Excel du cabinet) :
-   source unique utilisée à la fois par la Progression de l'accueil (fiche client)
-   et par tous les compteurs du tableau de bord (Accueils incomplets, etc.). */
+/* Regroupement des pièces du Dossier Permanent : source unique utilisée par la progression de l'accueil et les compteurs. */
 const MISSION_GROUPS = [
   { title: "Identité & statuts", keys: ["KBIS", "Statuts", "CNI dirigeants", "CNI associés"] },
   { title: "Cadrage de la mission", keys: ["Notes entrée mission / Devizen", "Acceptation mission", "LM à jour"] },
@@ -59,7 +58,11 @@ const DEFAULT_TEAM = ["Cheikh", "Soli", "Emilie", "Jacques"].map((nom, i) => ({
 
 const MOIS_ORDER = ["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sept","Oct","Nov","Déc"];
 const MOIS_FULL = { Jan:"Janvier",Fév:"Février",Mar:"Mars",Avr:"Avril",Mai:"Mai",Juin:"Juin",Juil:"Juillet",Août:"Août",Sept:"Septembre",Oct:"Octobre",Nov:"Novembre",Déc:"Décembre" };
-const REGIMES_TVA = ["CA3", "CA12", "FRANCHISE"];
+const REGIMES_TVA = ["CA3", "CA12", "FRANCHISE", "FEB", "TRIM"];
+// FEB et TRIM sont d'anciens codes de régime présents dans des dossiers historiques
+// (Franchise en base / Trimestriel) : on les garde sélectionnables pour que leur fiche
+// ne perde pas leur régime affiché, sans les pousser comme nouveaux choix recommandés.
+const REGIMES_TVA_LABELS = { FEB: "FEB (franchise en base)", TRIM: "TRIM (ancien code trimestriel)" };
 /* ============================================================
    SECTEURS D'ACTIVITÉ — classification auto depuis le champ "Activité"
    ============================================================ */
@@ -351,6 +354,11 @@ function normalizeText(s) {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+const NAF_SECTORS = [
+  [/^56|^55/, "restauration"], [/^41|^42|^43/, "batiment"], [/^96\.02/, "beaute"], [/^86/, "sante"], [/^47/, "commerce_detail"], [/^46/, "commerce_gros"], [/^62|^63/, "informatique"], [/^80|^81/, "securite_nettoyage"], [/^49|^50|^51|^52|^53/, "transport"], [/^68|^64\.2/, "immobilier"], [/^69|^70|^71|^73|^74/, "conseil"], [/^45/, "automobile"]
+];
+function classifyNaf(code) { const c=String(code||"").replace(/\s/g,"").replace(/([0-9]{2})([A-Z])/,"$1.$2"); return (NAF_SECTORS.find(([r])=>r.test(c))||[])[1] || "autres"; }
 function classifyActivite(activiteText) {
   const norm = normalizeText(activiteText);
   if (!norm) return "";
@@ -433,6 +441,7 @@ function migrateClients(list) {
     if (!next.portefeuilleId) next.portefeuilleId = "axe"; // valeur par défaut pour les données d'origine (avant multi-cabinets)
    if (!next.statutDossier) next.statutDossier = "actif"; // Actif / Inactif
     if (next.tvaRegime === "CA3" && !next.tvaPeriodicite) next.tvaPeriodicite = "mensuelle"; // valeur par défaut = comportement historique
+    if (!next.tvaControle) next.tvaControle = {}; // { [mois]: { commentaire, par, date } } — remarques du contrôle TVA (cf. écran TVA)
     if (!next.expert) next.expert = "";
     if (!next.chefMission) next.chefMission = "";
     if (!next.dateCloture) next.dateCloture = "";
@@ -442,7 +451,7 @@ function migrateClients(list) {
     if (!next.activite) next.activite = "";
     if (!next.contact) next.contact = { telephone: "", email: "", adresse: "", codePostal: "", ville: "", contactNom: "", contactFonction: "" };
     if (next.secteurManuel == null) next.secteurManuel = false;
-    if (!next.secteur) next.secteur = classifyActivite(next.activite);
+    if (!next.secteur) next.secteur = classifyNaf(next.codeNaf);
     if (!next.formeJuridiqueHistory) next.formeJuridiqueHistory = {};
     if (!next.lienSharepoint) next.lienSharepoint = "";
     if (!next.revision) next.revision = {};
@@ -735,7 +744,7 @@ function parseClientsExcelFile(file) {
    ============================================================ */
 function effectiveTvaStatus(client, moisKey) {
   const manual = (client.tvaMois?.[moisKey] || "").toUpperCase();
-  if (manual === "OK" || manual === "FAIT" || manual === "NA") return manual;
+  if (manual === "OK" || manual === "FAIT" || manual === "NA" || manual === "NON_VALIDE") return manual;
 
   // Régime CA12 : une seule déclaration annuelle, exigible en Mai N+1.
   // Les 11 autres mois de la grille ne sont pas concernés.
@@ -763,7 +772,17 @@ function effectiveTvaStatus(client, moisKey) {
   return deadline.getTime() < now.getTime() ? "RETARD" : "";
 }
 function tvaTone(status) {
-  return status === "OK" ? "green" : status === "FAIT" ? "amber" : status === "RETARD" ? "red" : "neutral";
+  return status === "OK" ? "green" : status === "FAIT" ? "amber" : status === "NON_VALIDE" ? "purple" : status === "RETARD" ? "red" : "neutral";
+}
+// Libellé affiché pour chaque statut de cellule TVA — centralisé pour rester cohérent
+// entre la grille TVA et la fiche client.
+function tvaStatusLabel(status) {
+  return status === "RETARD" ? "Retard"
+    : status === "FAIT" ? "Fait"
+    : status === "OK" ? "Validé"
+    : status === "NON_VALIDE" ? "Non validé"
+    : status === "NA" ? "N/A"
+    : "·";
 }
 
 /* ============================================================
@@ -1025,6 +1044,8 @@ const ROLE_LABELS = { collaborateur: "Collaborateur", expert: "Expert", chef_mis
    ============================================================ */
 function CabinetApp({ session, onLogout }) {
   const [clients, setClients] = useState(null);
+  const [legalRequests, setLegalRequests] = useState(() => { try { return JSON.parse(localStorage.getItem("axe-legal-requests") || "[]"); } catch { return []; } });
+  useEffect(() => { try { localStorage.setItem("axe-legal-requests", JSON.stringify(legalRequests)); } catch {} }, [legalRequests]);
   const [team, setTeam] = useState(null);
   const [portefeuilles, setPortefeuilles] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1540,7 +1561,8 @@ function CabinetApp({ session, onLogout }) {
           onNav={navTo} onOpenClient={openClientTab} onNewClient={() => setShowAddClient(true)} clients={myClients}
           notifCount={myTasks.filter((t) => t.bucket === "retard").length || undefined}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
-          notifications={[...echeanceAlerts, ...notifications]} onMarkNotificationRead={markNotificationRead} onOpenClient2={openClientTab} />
+          notifications={[...echeanceAlerts, ...notifications]} onMarkNotificationRead={markNotificationRead} onOpenClient2={openClientTab}
+ />
         <div className="px-3 py-3 md:px-7 md:py-6" style={{ ...S.content, padding: undefined }}>
           {activeClient ? (
             // key={activeClient.id} force le remontage complet du composant à chaque
@@ -1571,12 +1593,12 @@ function CabinetApp({ session, onLogout }) {
               )}
               {view === "clients" && (
                 <ClientsRegistry clients={myClients} allClients={clients} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter}
-                  regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter} me={me}
+                  regimeFilter={regimeFilter} setRegimeFilter={setRegimeFilter} me={me} isAdmin={isAdmin}
                   collabQuickFilter={collabQuickFilter} setCollabQuickFilter={setCollabQuickFilter}
                   dashboardFilter={dashboardFilter} setDashboardFilter={setDashboardFilter}
                   selected={activeClientTab} setSelected={openClientTab} onAdd={() => setShowAddClient(true)}
                   onUpdate={updateClient}
-onImport={importClients} />
+onImport={importClients} onAddClient={addClient} />
               )}
               {view === "tva" && <TvaGrid clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter}
                 me={me}
@@ -1606,9 +1628,38 @@ onImport={importClients} />
                     });
                   }
                 }}
+                onReview={(id, mois, decision, commentaire) => {
+                  const c = clients.find(x => x.id === id);
+                  if (!c) return;
+                  const patch = { tvaMois: { ...(c.tvaMois || {}), [mois]: decision } };
+                  const nextControle = { ...(c.tvaControle || {}) };
+                  if (decision === "NON_VALIDE") {
+                    nextControle[mois] = { commentaire: commentaire || "", par: me, date: new Date().toISOString() };
+                  } else {
+                    // Contrôle validé : la remarque précédente n'a plus lieu d'être
+                    delete nextControle[mois];
+                  }
+                  patch.tvaControle = nextControle;
+                  updateClient(id, patch);
+                  // Le chef de mission / expert qui contrôle notifie le collaborateur du dossier,
+                  // qu'il soit invité à déclarer (validé) ou à corriger avant de déclarer (non validé).
+                  if (c.collab && c.collab !== me) {
+                    const dest = team.find((t) => t.nom === c.collab);
+                    if (dest) insertNotificationRemote({
+                      id: `n-${crypto?.randomUUID ? crypto.randomUUID() : Date.now()}`,
+                      destinataire_id: dest.id, expediteur_id: myRow?.id || null,
+                      client_id: c.id, client_nom: c.nom,
+                      type: decision === "OK" ? "tva_confirme" : "tva_a_corriger",
+                      message: decision === "OK"
+                        ? `${me} a contrôlé et validé la TVA de ${mois} pour ${c.nom} — la déclaration peut être faite.`
+                        : `${me} a contrôlé la TVA de ${mois} pour ${c.nom} : des modifications sont nécessaires avant la déclaration.${commentaire ? " " + commentaire : ""}`,
+                    });
+                  }
+                }}
                 onUpdate={updateClient} onOpenClient={openClientTab} />}
               {view === "bilans" && <BilansView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "acomptes" && <AcomptesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
+              {view === "prestations-juridiques" && <LegalServicesView clients={myClients} requests={legalRequests} setRequests={setLegalRequests} />}
               {view === "age" && <AgeAgoView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "revision" && (
   <RevisionView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} setView={navTo} />
@@ -2050,6 +2101,7 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
     {
       id: "juridique", label: "Juridique",
       items: [
+        { id: "prestations-juridiques", label: "Prestations juridiques", icon: Scale },
         { id: "age", label: "Assemblées (AGE / AGO)", icon: Building2, badge: counts.ageAlert, badgeTone: "amber" },
       ],
     },
@@ -2890,7 +2942,17 @@ function PilotageView({ clients, tasks, team, me, onOpenClient, onView }) {
   return <div>
     <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 17, fontWeight: 700, color: T.ink, margin: "0 0 6px" }}>Pilotage cabinet</h1></Reveal>
     <p style={{ color: T.inkMuted, fontSize: 12.5, margin: "0 0 18px" }}>Le cockpit du chef de mission : ce qui nécessite une action, une relance ou une validation.</p>
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-3" style={{ marginBottom: 18 }}>
+    <MobileKpiSummary
+      title="Pilotage cabinet"
+      items={[
+        { label: "Priorités", value: critical.length, tone: critical.length ? "red" : "green", onClick: () => onView("surveillance") },
+        { label: "Pièces à relancer", value: relances.length, tone: relances.length ? "amber" : "green" },
+        { label: "À valider CDM", value: validations.length, tone: validations.length ? "amber" : "green" },
+        { label: "Dossiers à risque", value: rentabilite.length, tone: rentabilite.length ? "amber" : "green" },
+        { label: "Dossiers actifs", value: active.length, tone: "neutral", onClick: () => onView("clients") },
+      ]}
+    />
+    <div className="hidden md:grid grid-cols-2 md:grid-cols-5 gap-3" style={{ marginBottom: 18 }}>
       <KpiCard label="Priorités" value={critical.length} icon={ShieldAlert} tone={critical.length ? "red" : "green"} onClick={() => onView("surveillance")} />
       <KpiCard label="Pièces à relancer" value={relances.length} icon={Mail} tone={relances.length ? "amber" : "green"} />
       <KpiCard label="À valider CDM" value={validations.length} icon={Check} tone={validations.length ? "amber" : "green"} />
@@ -3091,6 +3153,7 @@ const tvaItems = useMemo(() => {
   const counts = {
     OK: 0,
     FAIT: 0,
+    NON_VALIDE: 0,
     RETARD: 0,
     ATTENTE: 0,
     NA: 0,
@@ -3102,6 +3165,7 @@ const tvaItems = useMemo(() => {
 
     if (status === "OK") counts.OK++;
     else if (status === "FAIT") counts.FAIT++;
+    else if (status === "NON_VALIDE") counts.NON_VALIDE++;
     else if (status === "RETARD") counts.RETARD++;
     else if (status === "NA") counts.NA++;
     else counts.ATTENTE++;
@@ -3119,6 +3183,12 @@ const tvaItems = useMemo(() => {
       label: "Préparées",
       value: counts.FAIT,
       color: T.amber,
+    },
+    {
+      key: "NON_VALIDE",
+      label: "À corriger",
+      value: counts.NON_VALIDE,
+      color: "#6D28D9",
     },
     {
       key: "RETARD",
@@ -3192,7 +3262,16 @@ const collaboratorItems = useMemo(
         </div>
       </Reveal>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4" style={{ marginBottom: 24 }}>
+      <MobileKpiSummary
+        title="Vue d'ensemble"
+        items={[
+          { label: "Mes dossiers", value: counts.total, tone: "neutral", onClick: () => setView("clients") },
+          { label: "TVA en retard ce mois", value: counts.tvaAlert, tone: counts.tvaAlert ? "amber" : "green", onClick: () => setView("tva") },
+          { label: "Bilans en retard", value: counts.bilanRetard, tone: counts.bilanRetard ? "red" : "green", onClick: () => setView("bilans") },
+          { label: "Accueils incomplets", value: counts.missionIncomplete, tone: counts.missionIncomplete ? "amber" : "green", onClick: () => setView("mission") },
+        ]}
+      />
+      <div className="hidden md:grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4" style={{ marginBottom: 24 }}>
         <KpiCard index={0} label="Mes dossiers" value={counts.total} icon={Users} onClick={() => setView("clients")} linkLabel="Voir la liste" />
         <KpiCard index={1} label="TVA en retard ce mois" value={counts.tvaAlert} icon={Receipt} tone={counts.tvaAlert ? "amber" : "green"} onClick={() => setView("tva")} linkLabel="Voir les tâches" />
         <KpiCard index={2} label="Bilans en retard" value={counts.bilanRetard} icon={FileWarning} tone={counts.bilanRetard ? "red" : "green"} onClick={() => setView("bilans")} linkLabel="Voir les bilans" />
@@ -3587,6 +3666,96 @@ function KpiCard({ label, value, icon: Icon, tone, onClick, index = 0, linkLabel
     </Reveal>
   );
 }
+/* ============================================================
+   MOBILE KPI SUMMARY (variante "C") — remplace la grille de
+   KpiCard sur mobile : une seule carte de synthèse avec des
+   pastilles de couleur, le détail chiffré s'ouvrant dans une
+   modale plein écran. La grille de KpiCard reste affichée telle
+   quelle à partir de md: (desktop/tablette).
+   Usage : <MobileKpiSummary title="…" items={[{label, value, tone, onClick}]} />
+   ============================================================ */
+function toneColors(tone) {
+  if (tone === "red") return { dot: "#F87171", text: T.red };
+  if (tone === "amber") return { dot: "#FBBF24", text: T.amber };
+  if (tone === "green") return { dot: "#34D399", text: T.green };
+  return { dot: "#93C5FD", text: T.navy };
+}
+function MobileKpiSummary({ title = "Vue d'ensemble", headlineItem, items = [] }) {
+  const [open, setOpen] = useState(false);
+  const headline = headlineItem || items[0];
+  const rest = items.filter((it) => it !== headline);
+  return (
+    <div className="md:hidden" style={{ marginBottom: 18 }}>
+      <div
+        onClick={() => setOpen(true)}
+        className="clickable"
+        style={{
+          background: `linear-gradient(135deg, ${T.sidebarBg2}, ${T.sidebarBg})`,
+          borderRadius: T.radiusLg, padding: "18px 18px 16px", color: "#fff", boxShadow: T.shadow,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 11.5, color: T.sidebarInkMuted, fontWeight: 600 }}>{headline?.label || title}</div>
+            <div style={{ fontFamily: T.serif, fontSize: 28, fontWeight: 800, marginTop: 2 }}>{headline?.value ?? "—"}</div>
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+            title="Voir tous les indicateurs"
+            style={{ background: "rgba(255,255,255,0.12)", border: "none", color: "#fff", borderRadius: 9, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+          >
+            <ArrowUpRight size={15} strokeWidth={2.3} />
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+          {rest.map((it, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: T.sidebarInk }}>
+              <span style={{ width: 8, height: 8, borderRadius: 8, background: toneColors(it.tone).dot, flexShrink: 0 }} />
+              {it.value} {it.label.toLowerCase()}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", zIndex: 70 }} />
+          <div style={{
+            position: "fixed", left: 10, right: 10, top: "10%", bottom: "10%", background: T.card, borderRadius: T.radiusLg,
+            padding: "16px 18px", boxShadow: T.shadowLg, zIndex: 71, overflowY: "auto",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <h3 style={{ fontFamily: T.serif, fontSize: 16, fontWeight: 800, color: T.ink, margin: 0 }}>{title}</h3>
+              <button onClick={() => setOpen(false)} style={{ width: 28, height: 28, borderRadius: 999, background: T.paper, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.inkSoft }}>
+                <X size={14} />
+              </button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {items.map((it, i) => {
+                const c = toneColors(it.tone);
+                return (
+                  <div
+                    key={i}
+                    onClick={it.onClick ? () => { setOpen(false); it.onClick(); } : undefined}
+                    className={it.onClick ? "hoverRow clickable" : ""}
+                    style={{ display: "flex", alignItems: "center", gap: 10, background: T.paper, border: `1px solid ${T.line}`, borderRadius: 14, padding: "12px 14px" }}
+                  >
+                    <span style={{ width: 8, height: 8, borderRadius: 8, background: c.dot, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{it.label}</div>
+                      {it.sublabel && <div style={{ fontSize: 11, color: T.inkMuted, marginTop: 1 }}>{it.sublabel}</div>}
+                    </div>
+                    <div style={{ fontWeight: 800, color: c.text, fontSize: 15 }}>{it.value}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 function Panel({ title, children, right, index = 0 }) {
   return (
     <Reveal index={index}>
@@ -3613,6 +3782,7 @@ function ClientsRegistry({
   regimeFilter,
   setRegimeFilter,
   me,
+  isAdmin,
   collabQuickFilter,
   setCollabQuickFilter,
   dashboardFilter,
@@ -3621,7 +3791,8 @@ function ClientsRegistry({
   setSelected,
   onAdd,
   onUpdate,
-  onImport
+  onImport,
+  onAddClient,
 }) {
   const [statutFilter, setStatutFilter] = useState("actif");
   const baseFiltered = useMemo(() => filterClients(clients, search, roleFilter, me, regimeFilter, dashboardFilter ? "tous" : statutFilter), [clients, search, roleFilter, me, regimeFilter, statutFilter, dashboardFilter]);
@@ -3668,6 +3839,34 @@ function ClientsRegistry({
   const [importBusy, setImportBusy] = useState(false);
   const [importMsg, setImportMsg] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Dossiers présents dans le référentiel d'origine (RAW_SEED_CLIENTS, embarqué dans le code)
+  // mais absents de la base réelle (Supabase) — ex. un dossier ajouté au référentiel après le
+  // tout premier chargement de l'application n'y est jamais inséré automatiquement.
+  // Rapprochement par SIREN (ou par nom si le SIREN est vide/inconnu), comme pour l'import Excel.
+  const [missingSeedOpen, setMissingSeedOpen] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const missingSeedClients = useMemo(() => {
+    if (!isAdmin) return [];
+    const safeAll = Array.isArray(allClients) ? allClients.filter(Boolean) : [];
+    const keyOf = (c) => (c.siren && String(c.siren).trim()) || (c.nom || "").trim().toLowerCase();
+    const existingKeys = new Set(safeAll.map(keyOf).filter(Boolean));
+    return RAW_SEED_CLIENTS.filter((c) => {
+      const key = keyOf(c);
+      return key && !existingKeys.has(key);
+    });
+  }, [allClients, isAdmin]);
+
+  const handleSyncMissing = async () => {
+    if (!missingSeedClients.length || !onAddClient) return;
+    setSyncBusy(true);
+    const normalized = migrateClients(missingSeedClients);
+    for (const c of normalized) {
+      onAddClient(c);
+    }
+    setSyncBusy(false);
+    setMissingSeedOpen(false);
+  };
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
@@ -3719,6 +3918,35 @@ function ClientsRegistry({
                 <X size={13} />
               </button>
             </span>
+          </div>
+        )}
+        {isAdmin && missingSeedClients.length > 0 && (
+          <div style={{ marginBottom: 12, border: `1px solid #FCD34D`, background: T.amberSoft, borderRadius: 12, padding: "10px 14px" }}>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: T.ink }}>
+                <AlertTriangle size={15} color={T.amber} />
+                <span>
+                  <strong>{missingSeedClients.length}</strong> dossier{missingSeedClients.length > 1 ? "s" : ""} du référentiel initial {missingSeedClients.length > 1 ? "ne sont" : "n'est"} pas encore dans la base
+                  {" "}({missingSeedClients.slice(0, 3).map((c) => c.nom).join(", ")}{missingSeedClients.length > 3 ? "…" : ""}).
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setMissingSeedOpen((o) => !o)} style={{ fontSize: 11.5, fontWeight: 600, color: T.navy, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
+                  {missingSeedOpen ? "Masquer la liste" : "Voir la liste"}
+                </button>
+                <button onClick={handleSyncMissing} disabled={syncBusy} className="btn-secondary !py-1.5 !text-xs">
+                  {syncBusy ? <Loader2 size={13} className="spin" /> : <Plus size={13} />}
+                  Ajouter {missingSeedClients.length > 1 ? "ces dossiers" : "ce dossier"}
+                </button>
+              </div>
+            </div>
+            {missingSeedOpen && (
+              <ul style={{ margin: "8px 0 0", padding: "0 0 0 18px", fontSize: 11.5, color: T.inkMuted, lineHeight: 1.7 }}>
+                {missingSeedClients.map((c) => (
+                  <li key={c.siren || c.nom}>{c.nom}{c.siren ? ` — SIREN ${c.siren}` : ""}</li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
         {dashboardFilter && (
@@ -3886,9 +4114,9 @@ function ClientEditorPage({
   };
   if (!client) return null;
   const tabs = [
-    { id: "infos", label: "Infos générales" }, { id: "contact", label: "Fiche contact" }, { id: "corporate", label: "Corporate" }, { id: "tva", label: "TVA" },
+     { id: "mission", label: "Accueil client" }, { id: "infos", label: "Infos générales" }, { id: "contact", label: "Fiche contact" }, { id: "corporate", label: "Corporate" }, { id: "tva", label: "TVA" },
     { id: "bilan", label: "Bilan" }, { id: "acomptes", label: "Acomptes" }, { id: "age", label: "AGE / AGO" },
-    { id: "formeJuridique", label: "Forme juridique" }, { id: "revision", label: "Révision" }, { id: "mission", label: "Intégration" },
+    { id: "formeJuridique", label: "Forme juridique" },{ id: "revision", label: "Révision" },
     { id: "acces", label: "Accès & codes" },
     { id: "suivi", label: "Demandes & pièces" },
     { id: "rentabilite", label: "Temps & rentabilité" },
@@ -4203,18 +4431,8 @@ function InfosTab({ client, team, onUpdate, setView }) {
       <FieldRow label="Forme juridique"><SelectPill value={client.formeJuridique} options={["EI", "EURL", "SARL", "SAS", "SASU", "SCI", "SCM", "SELARL", "SA", "SNC", "Association"]} onChange={(v) => onUpdate(client.id, { formeJuridique: v })} /></FieldRow>
       <FieldRow label="Régime fiscal"><SelectPill value={client.regimeFiscal} options={["IS", "IR"]} labels={{ IS: "IS — Impôt sur les sociétés", IR: "IR — Impôt sur le revenu" }} onChange={(v) => onUpdate(client.id, { regimeFiscal: v })} /></FieldRow>
       <FieldRow label="Capital social"><TextInput defaultValue={client.capital} onCommit={(v) => onUpdate(client.id, { capital: v })} placeholder="ex. 5 000 €" width={140} /></FieldRow>
-      <FieldRow label="Activité">
-        <TextInput
-          defaultValue={client.activite}
-          onCommit={(v) => onUpdate(client.id, {
-            activite: v,
-            secteur: client.secteurManuel ? client.secteur : classifyActivite(v),
-          })}
-          placeholder="ex. Restauration rapide"
-          width={200}
-          align="left"
-        />
-      </FieldRow>
+      <FieldRow label="Code NAF / APE"><TextInput defaultValue={client.codeNaf} onCommit={(v) => onUpdate(client.id, { codeNaf: v.toUpperCase(), secteur: classifyNaf(v) })} placeholder="ex. 56.10A" width={140} /></FieldRow>
+      <FieldRow label="Activité"><TextInput defaultValue={client.activite} onCommit={(v) => onUpdate(client.id, { activite: v })} placeholder="Information descriptive" width={200} align="left" /></FieldRow>
       <FieldRow label="Secteur">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{
@@ -4240,7 +4458,7 @@ function InfosTab({ client, team, onUpdate, setView }) {
         const chef = team.find((t) => t.nom === v);
         onUpdate(client.id, { chefMission: v, chefMission_id: chef?.id || "" });
       }} /></FieldRow>
-      <FieldRow label="Régime TVA"><SelectPill value={client.tvaRegime} options={REGIMES_TVA} onChange={(v) => onUpdate(client.id, { tvaRegime: v })} /></FieldRow>
+      <FieldRow label="Régime TVA"><SelectPill value={client.tvaRegime} options={REGIMES_TVA} labels={REGIMES_TVA_LABELS} onChange={(v) => onUpdate(client.id, { tvaRegime: v })} /></FieldRow>
     </div>
   );
 }
@@ -4364,31 +4582,38 @@ function CorporateTab({ client, onUpdate }) {
 }
 
 function TvaTab({ client, onUpdate }) {
-  const currentStatus = client.tvaRegime === "CA12" ? effectiveTvaStatus(client, "Mai") : effectiveTvaStatus(client, currentMonthKey());
+  const currentMonth = client.tvaRegime === "CA12" ? "Mai" : currentMonthKey();
+  const currentStatus = effectiveTvaStatus(client, currentMonth);
+  const currentNote = client.tvaControle?.[currentMonth]?.commentaire || "";
   return (
     <div>
-      <FieldRow label="Régime TVA"><SelectPill value={client.tvaRegime} options={REGIMES_TVA} onChange={(v) => onUpdate(client.id, { tvaRegime: v, tvaPeriodicite: v === "CA3" ? (client.tvaPeriodicite || "mensuelle") : client.tvaPeriodicite })} /></FieldRow>
+      <FieldRow label="Régime TVA"><SelectPill value={client.tvaRegime} options={REGIMES_TVA} labels={REGIMES_TVA_LABELS} onChange={(v) => onUpdate(client.id, { tvaRegime: v, tvaPeriodicite: v === "CA3" ? (client.tvaPeriodicite || "mensuelle") : client.tvaPeriodicite })} /></FieldRow>
       {client.tvaRegime === "CA3" && (
         <FieldRow label="Périodicité de déclaration">
           <SelectPill value={client.tvaPeriodicite || "mensuelle"} options={TVA_PERIODICITES} labels={TVA_PERIODICITE_LABELS} allowEmpty={false} onChange={(v) => onUpdate(client.id, { tvaPeriodicite: v })} />
         </FieldRow>
       )}
-      <FieldRow label="Jour limite de déclaration">
+      {client.tvaRegime !== "CA12" && <FieldRow label="Jour limite de déclaration">
         <input type="number" min="1" max="31" defaultValue={client.tvaExig || ""} placeholder="ex. 19"
           onBlur={(e) => onUpdate(client.id, { tvaExig: e.target.value ? parseInt(e.target.value, 10) : "" })}
           style={{ fontFamily: T.mono, fontSize: 12, padding: "5px 8px", borderRadius: 9, border: `1px solid ${T.line}`, width: 60, textAlign: "right" }} />
-      </FieldRow>
+      </FieldRow>}
       <FieldRow label="Statut courant">
-        <Stamped tone={tvaTone(currentStatus)} small>{currentStatus === "RETARD" ? "Retard" : currentStatus === "FAIT" ? "Fait" : currentStatus === "OK" ? "OK" : currentStatus === "NA" ? "N/A" : "—"}</Stamped>
+        <Stamped tone={tvaTone(currentStatus)} small>{tvaStatusLabel(currentStatus)}</Stamped>
       </FieldRow>
+      {currentStatus === "NON_VALIDE" && currentNote && (
+        <FieldRow label="Remarques du contrôle">
+          <div style={{ fontSize: 12, color: T.ink, background: T.redSoft || "#FEECEC", border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 10px", maxWidth: 320 }}>{currentNote}</div>
+        </FieldRow>
+      )}
       <div style={{ height: 14 }} />
       <Panel title="Paiement de TVA">
         <PaymentLine
-          label={`TVA ${currentMonthKey()}`}
-          amount={client.tvaPaiements?.[currentMonthKey()]?.montant ?? ""}
-          status={client.tvaPaiements?.[currentMonthKey()]?.statut || "a_payer"}
-          onAmountChange={(value) => onUpdate(client.id, { tvaPaiements: { ...(client.tvaPaiements || {}), [currentMonthKey()]: { ...(client.tvaPaiements?.[currentMonthKey()] || {}), montant: value } } })}
-          onStatusChange={(value) => onUpdate(client.id, { tvaPaiements: { ...(client.tvaPaiements || {}), [currentMonthKey()]: { ...(client.tvaPaiements?.[currentMonthKey()] || {}), statut: value } } })}
+          label={client.tvaRegime === "CA12" ? "TVA annuelle — CA12" : `TVA ${currentMonthKey()}`}
+          amount={client.tvaPaiements?.[client.tvaRegime === "CA12" ? "CA12" : currentMonthKey()]?.montant ?? ""}
+          status={client.tvaPaiements?.[client.tvaRegime === "CA12" ? "CA12" : currentMonthKey()]?.statut || "a_payer"}
+          onAmountChange={(value) => { const k=client.tvaRegime === "CA12" ? "CA12" : currentMonthKey(); onUpdate(client.id, { tvaPaiements: { ...(client.tvaPaiements || {}), [k]: { ...(client.tvaPaiements?.[k] || {}), montant: value } } }) }}
+          onStatusChange={(value) => { const k=client.tvaRegime === "CA12" ? "CA12" : currentMonthKey(); onUpdate(client.id, { tvaPaiements: { ...(client.tvaPaiements || {}), [k]: { ...(client.tvaPaiements?.[k] || {}), statut: value } } }) }}
         />
       </Panel>
       <div style={{ fontSize: 12, color: T.inkMuted, margin: "14px 0 0", lineHeight: 1.6 }}>
@@ -4622,7 +4847,7 @@ function AcomptesTab({ client, onUpdate }) {
           ["dec", "Acompte IS — décembre"],
           ["solde", "Solde IS"],
         ].map(([key, label]) => (
-          <PaymentLine key={key} label={label} amount={is.paiements?.[key]?.montant ?? ""} status={is.paiements?.[key]?.statut || (is[key] ? "paye" : "a_payer")}
+          <PaymentLine key={key} label={label} amount={is.paiements?.[key]?.montant ?? (key === "solde" ? "" : (Number(is.montantN1) > 3000 ? (Number(is.montantN1)/4).toFixed(2) : ""))} status={is.paiements?.[key]?.statut || (is[key] ? "paye" : "a_payer")}
             onAmountChange={(v) => updatePayment("is", key, "montant", v)}
             onStatusChange={(v) => updatePayment("is", key, "statut", v)} />
         ))}
@@ -4643,7 +4868,7 @@ function AcomptesTab({ client, onUpdate }) {
       <div style={{ height: 12 }} />
       <Panel title="Paiements CFE">
         {[["juin", "Acompte CFE — juin"], ["dec", "Solde CFE — décembre"]].map(([key, label]) => (
-          <PaymentLine key={key} label={label} amount={cfe.paiements?.[key]?.montant ?? ""} status={cfe.paiements?.[key]?.statut || (cfe[key] ? "paye" : "a_payer")}
+          <PaymentLine key={key} label={label} amount={cfe.paiements?.[key]?.montant ?? (key === "juin" && Number(cfe.montantN1)>3000 ? (Number(cfe.montantN1)/2).toFixed(2) : "")} status={cfe.paiements?.[key]?.statut || (cfe[key] ? "paye" : "a_payer")}
             onAmountChange={(v) => updatePayment("cfe", key, "montant", v)}
             onStatusChange={(v) => updatePayment("cfe", key, "statut", v)} />
         ))}
@@ -5111,11 +5336,16 @@ function ReprisesView({ clients, search, roleFilter, setRoleFilter, me, meId, po
 /* ============================================================
    TVA GRID VIEW
    ============================================================ */
-function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onUpdate, onOpenClient }) {
+function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onReview, onUpdate, onOpenClient }) {
   const [collabFilter, setCollabFilter] = useState("Tous");
   const [regimeHeaderFilter, setRegimeHeaderFilter] = useState("Tous");
   const [exigHeaderFilter, setExigHeaderFilter] = useState("Tous");
   const [sortBy, setSortBy] = useState("nom"); // nom | retards
+  // Cellule pour laquelle le petit menu "Contrôlé et validé / Contrôlé non validé" est ouvert
+  const [reviewCell, setReviewCell] = useState(null); // { clientId, mois }
+  // Panneau de saisie des éléments à modifier, ouvert quand on choisit "Contrôlé non validé"
+  // (ou quand on rouvre une cellule déjà marquée "Non validé" pour consulter/modifier la remarque)
+  const [correctionPanel, setCorrectionPanel] = useState(null); // { client, mois, initial }
 
   // La vue TVA doit rester robuste même pendant le chargement des dossiers.
   // On normalise systématiquement la source avant les filtres pour éviter qu'un
@@ -5155,9 +5385,10 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onUp
     <div>
       <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 15, fontWeight: 600, color: T.ink, margin: "0 0 5px" }}>Échéances TVA</h1></Reveal>
       <p style={{ color: T.inkMuted, fontSize: 11, marginTop: 0, marginBottom: 16, lineHeight: 1.5 }}>
-        Cliquez une cellule : vide → <Stamped tone="amber" small>Fait</Stamped> → <Stamped tone="green" small>OK</Stamped> → <Stamped tone="neutral" small>N/A</Stamped>. Date limite dépassée sans saisie → <Stamped tone="red" small>Retard</Stamped> automatique.
+        Cliquez une cellule vide pour la passer à <Stamped tone="amber" small>Fait</Stamped> — cela notifie le chef de mission que le dossier est prêt à être contrôlé.
+        {" "}Cliquez ensuite sur <Stamped tone="amber" small>Fait</Stamped> pour choisir <Stamped tone="green" small>Contrôlé et validé</Stamped> (le collaborateur peut déclarer) ou <Stamped tone="purple" small>Contrôlé non validé</Stamped> (des éléments sont à modifier avant la déclaration — un panneau s'ouvre pour préciser quoi).
+        {" "}Le collaborateur est notifié dans les deux cas. Cliquez une cellule <Stamped tone="purple" small>Non validé</Stamped> pour revoir la remarque. Date limite dépassée sans saisie → <Stamped tone="red" small>Retard</Stamped> automatique.
         {" "}CA3 : déclaration du mois M exigible en M+1. CA12 : une seule déclaration, en Mai N+1.
-        {" "}Passer une cellule à <Stamped tone="amber" small>Fait</Stamped> notifie le chef de mission du dossier ; il confirme en la faisant passer à <Stamped tone="green" small>OK</Stamped>.
       </p>
       <FilterBar roleFilter={roleFilter} setRoleFilter={setRoleFilter} count={filtered.length} />
       <div className="flex items-center gap-2 flex-wrap mb-3">
@@ -5212,11 +5443,54 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onUp
                     return <td key={m} style={{ ...tdStyle, textAlign: "center", color: T.inkMuted, opacity: 0.45 }}>—</td>;
                   }
                   const manual = (c.tvaMois?.[m] || "").toUpperCase(); const display = effectiveTvaStatus(c, m); const tone = tvaTone(display);
+                  const note = c.tvaControle?.[m]?.commentaire || "";
+                  const isReviewOpen = reviewCell && reviewCell.clientId === c.id && reviewCell.mois === m;
                   return (
-                    <td key={m} style={{ ...tdStyle, textAlign: "center" }}>
-                      <button className="clickable" onClick={() => onCycle(c.id, m, manual === "" ? "FAIT" : manual === "FAIT" ? "OK" : manual === "OK" ? "NA" : "")} style={{ background: "none", border: "none", padding: 0 }}>
-                        <Stamped tone={tone} small>{display === "RETARD" ? "Retard" : display === "FAIT" ? "Fait" : display === "OK" ? "OK" : display === "NA" ? "N/A" : "·"}</Stamped>
+                    <td key={m} style={{ ...tdStyle, textAlign: "center", position: "relative" }}>
+                      <button
+                        className="clickable"
+                        title={manual === "NON_VALIDE" && note ? note : undefined}
+                        onClick={() => {
+                          if (manual === "") { onCycle(c.id, m, "FAIT"); return; }
+                          if (manual === "FAIT") { setReviewCell({ clientId: c.id, mois: m }); return; }
+                          if (manual === "OK") { onCycle(c.id, m, "NA"); return; }
+                          if (manual === "NON_VALIDE") { setCorrectionPanel({ client: c, mois: m, initial: note }); return; }
+                          onCycle(c.id, m, ""); // NA -> vide
+                        }}
+                        style={{ background: "none", border: "none", padding: 0 }}
+                      >
+                        <Stamped tone={tone} small>{tvaStatusLabel(display)}</Stamped>
                       </button>
+                      {isReviewOpen && (
+                        <>
+                          <div onClick={() => setReviewCell(null)} style={{ position: "fixed", inset: 0, zIndex: 45 }} />
+                          <div onClick={(e) => e.stopPropagation()} style={{
+                            position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", marginTop: 4,
+                            zIndex: 46, width: 210, background: T.paper, border: `1px solid ${T.line}`, borderRadius: 10,
+                            boxShadow: "0 14px 32px rgba(15,23,42,0.2)", padding: 6, display: "flex", flexDirection: "column", gap: 3,
+                          }}>
+                            <div style={{ fontSize: 9.5, color: T.inkMuted, padding: "3px 6px", textAlign: "left", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                              Contrôle {c.nom} — {m}
+                            </div>
+                            <button
+                              onClick={() => { onReview(c.id, m, "OK"); setReviewCell(null); }}
+                              style={{ display: "flex", alignItems: "center", gap: 7, textAlign: "left", fontSize: 12, fontWeight: 600, color: T.ink, background: "none", border: "none", borderRadius: 7, padding: "7px 8px", cursor: "pointer" }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = T.greenSoft}
+                              onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                            >
+                              <CheckCircle2 size={14} color={T.green} /> Contrôlé et validé
+                            </button>
+                            <button
+                              onClick={() => { setCorrectionPanel({ client: c, mois: m, initial: "" }); setReviewCell(null); }}
+                              style={{ display: "flex", alignItems: "center", gap: 7, textAlign: "left", fontSize: 12, fontWeight: 600, color: T.ink, background: "none", border: "none", borderRadius: 7, padding: "7px 8px", cursor: "pointer" }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = "#EDE9FE"}
+                              onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                            >
+                              <XCircle size={14} color="#6D28D9" /> Contrôlé non validé
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </td>
                   );
                 })}
@@ -5225,6 +5499,61 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onUp
           </tbody>
         </table>
         {filtered.length === 0 && <EmptyNote text="Aucun dossier soumis à la TVA dans cette sélection." />}
+      </div>
+      {correctionPanel && (
+        <TvaCorrectionPanel
+          client={correctionPanel.client}
+          mois={correctionPanel.mois}
+          initial={correctionPanel.initial}
+          onClose={() => setCorrectionPanel(null)}
+          onSave={(commentaire) => { onReview(correctionPanel.client.id, correctionPanel.mois, "NON_VALIDE", commentaire); setCorrectionPanel(null); }}
+          onMarkFixed={() => { onCycle(correctionPanel.client.id, correctionPanel.mois, "FAIT"); setCorrectionPanel(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   PANNEAU DE CONTRÔLE TVA — éléments à modifier avant déclaration
+   ============================================================ */
+function TvaCorrectionPanel({ client, mois, initial, onClose, onSave, onMarkFixed }) {
+  const [text, setText] = useState(initial || "");
+  const isExisting = !!initial;
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(28,37,65,0.4)" }} />
+      <div className="scrollbar" style={{ position: "relative", background: T.paper, borderRadius: 14, padding: 24, width: 440, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <XCircle size={18} color="#6D28D9" />
+          <h3 style={{ fontFamily: T.serif, fontSize: 15, fontWeight: 600, color: T.navy, margin: 0 }}>TVA {mois} — {client.nom}</h3>
+        </div>
+        <p style={{ fontSize: 11.5, color: T.inkMuted, margin: "4px 0 14px" }}>
+          Contrôlé non validé : précisez ce que le collaborateur doit modifier avant de pouvoir déclarer.
+        </p>
+        <textarea
+          autoFocus
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Ex. : facture n°4521 à recoder en 401, écart de 230 € sur le compte de TVA collectée…"
+          rows={6}
+          style={{ width: "100%", padding: 10, borderRadius: 10, border: `1px solid ${T.line}`, fontSize: 12.5, background: T.card, resize: "vertical", color: T.ink }}
+        />
+        <div style={{ display: "flex", gap: 8, marginTop: 18, justifyContent: "space-between", flexWrap: "wrap" }}>
+          <div>
+            {isExisting && (
+              <button onClick={onMarkFixed} style={{ padding: "9px 12px", borderRadius: 10, border: `1px solid ${T.line}`, background: "none", cursor: "pointer", fontSize: 11.5, color: T.navy, fontWeight: 600 }}>
+                Corrigé → repasser en revue (Fait)
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onClose} style={{ padding: "9px 14px", borderRadius: 10, border: `1px solid ${T.line}`, background: "none", cursor: "pointer", fontSize: 12 }}>Annuler</button>
+            <button onClick={() => onSave(text.trim())} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: "#6D28D9", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+              Enregistrer — Non validé
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -5622,6 +5951,17 @@ function AidesSecteurView({ content, canEdit, onUpdate }) {
     </div>
   );
 }
+function LegalServicesView({ clients, requests, setRequests }) {
+  const [form, setForm] = useState({ clientId:"", nom:"", prestation:"Création de société", notes:"", statut:"demande" });
+  const add = () => { if (!form.nom.trim()) return; setRequests([{ id: `jur-${Date.now()}`, ...form, createdAt: new Date().toISOString() }, ...requests]); setForm({ clientId:"", nom:"", prestation:"Création de société", notes:"", statut:"demande" }); };
+  const update = (id, patch) => setRequests(requests.map(r=>r.id===id?{...r,...patch}:r));
+  const remove = id => setRequests(requests.filter(r=>r.id!==id));
+  const statuses=[['demande','Demande'],['production','En cours de production'],['termine','Terminé']];
+  return <div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}><div><h2 style={{margin:0,fontFamily:T.serif,color:T.navy}}>Prestations juridiques</h2><div style={{fontSize:12,color:T.inkMuted,marginTop:5}}>Commandes adressées au pôle juridique — indépendantes ou liées à un dossier existant.</div></div></div>
+    <Panel title="Nouvelle demande"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10}}><input value={form.nom} onChange={e=>setForm({...form,nom:e.target.value})} placeholder="Nom du client ou du projet" style={{padding:9,border:`1px solid ${T.line}`,borderRadius:9}}/><select value={form.clientId} onChange={e=>setForm({...form,clientId:e.target.value})} style={{padding:9,border:`1px solid ${T.line}`,borderRadius:9}}><option value="">Sans dossier existant</option>{clients.map(c=><option key={c.id} value={c.id}>{c.nom}</option>)}</select><select value={form.prestation} onChange={e=>setForm({...form,prestation:e.target.value})} style={{padding:9,border:`1px solid ${T.line}`,borderRadius:9}}>{["Création de société","Modification statutaire","Modification des éléments de la société","Montage holding","Transformation","Dissolution / liquidation","Autre prestation juridique"].map(x=><option key={x}>{x}</option>)}</select><button onClick={add} style={{background:T.navy,color:"white",border:0,borderRadius:9,fontWeight:700,cursor:"pointer"}}>+ Créer la demande</button></div><textarea value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Précisions / pièces / consignes pour le pôle juridique…" style={{marginTop:10,width:"100%",minHeight:70,padding:9,border:`1px solid ${T.line}`,borderRadius:9}}/></Panel>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14,marginTop:16}}>{statuses.map(([key,label])=><div key={key} style={{background:T.card,border:`1px solid ${T.line}`,borderRadius:14,padding:12}}><div style={{fontWeight:800,color:T.navy,marginBottom:10}}>{label} <span style={{color:T.inkMuted,fontSize:11}}>{requests.filter(r=>r.statut===key).length}</span></div>{requests.filter(r=>r.statut===key).map(r=><div key={r.id} style={{border:`1px solid ${T.line}`,borderRadius:11,padding:10,marginBottom:9,boxShadow:T.shadowSm}}><div style={{fontWeight:800,fontSize:13}}>{r.nom}</div><div style={{fontSize:11,color:T.inkMuted,margin:"3px 0 8px"}}>{r.prestation}{r.clientId?" · Dossier lié":" · Hors dossier"}</div>{r.notes&&<div style={{fontSize:11,color:T.inkSoft,marginBottom:8}}>{r.notes}</div>}<div style={{display:"flex",gap:5,alignItems:"center"}}>{statuses.map(([sk,sl])=><button key={sk} onClick={()=>update(r.id,{statut:sk})} style={{fontSize:10,padding:"4px 6px",borderRadius:7,border:`1px solid ${T.line}`,background:r.statut===sk?T.navySoft:T.card,color:r.statut===sk?T.navy:T.inkMuted,cursor:"pointer"}}>{sk==='demande'?'Demande':sk==='production'?'Production':'Terminé'}</button>)}<button onClick={()=>remove(r.id)} style={{marginLeft:"auto",border:0,background:"none",color:T.red,cursor:"pointer"}}><Trash2 size={14}/></button></div></div>)}</div>)}</div></div>;
+}
+
 function AgeAgoView({ clients, search, roleFilter, setRoleFilter, me, onUpdate }) {
   const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
   const [expanded, setExpanded] = useState(null);
