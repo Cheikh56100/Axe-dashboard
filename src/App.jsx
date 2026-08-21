@@ -5420,10 +5420,15 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onRe
             {MOIS_ORDER.map((m) => <th key={m} style={{ ...thStyle, textAlign: "center" }}>{m}</th>)}
           </tr></thead>
           <tbody>
-            {filtered.map((c) => {
-              const isCa12 = c.tvaRegime === "CA12";
-              const isCa3Trim = c.tvaRegime === "CA3" && c.tvaPeriodicite === "trimestrielle";
-              return (
+            // APRÈS
+{filtered.map((c, rowIndex) => {
+  const isCa12 = c.tvaRegime === "CA12";
+  const isCa3Trim = c.tvaRegime === "CA3" && c.tvaPeriodicite === "trimestrielle";
+  // Les dernières lignes du tableau n'ont pas assez de place en dessous pour
+  // afficher le petit menu de contrôle : on l'ouvre alors vers le haut plutôt
+  // que vers le bas, pour qu'il reste toujours entièrement visible/cliquable.
+  const openUpward = rowIndex >= filtered.length - 3;
+  return (
               <tr key={c.id} className="hoverRow">
                 <td className={onOpenClient ? "clickable" : undefined} onClick={() => onOpenClient && onOpenClient(c.id)}
                   style={{ ...tdStyle, fontWeight: 600, whiteSpace: "nowrap", color: onOpenClient ? T.navy : T.ink }}>{c.nom}</td>
@@ -5464,11 +5469,13 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onRe
                       {isReviewOpen && (
                         <>
                           <div onClick={() => setReviewCell(null)} style={{ position: "fixed", inset: 0, zIndex: 45 }} />
-                          <div onClick={(e) => e.stopPropagation()} style={{
-                            position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", marginTop: 4,
-                            zIndex: 46, width: 210, background: T.paper, border: `1px solid ${T.line}`, borderRadius: 10,
-                            boxShadow: "0 14px 32px rgba(15,23,42,0.2)", padding: 6, display: "flex", flexDirection: "column", gap: 3,
-                          }}>
+                          // APRÈS
+<div onClick={(e) => e.stopPropagation()} style={{
+  position: "absolute", left: "50%", transform: "translateX(-50%)",
+  ...(openUpward ? { bottom: "100%", marginBottom: 4 } : { top: "100%", marginTop: 4 }),
+  zIndex: 46, width: 210, background: T.paper, border: `1px solid ${T.line}`, borderRadius: 10,
+  boxShadow: "0 14px 32px rgba(15,23,42,0.2)", padding: 6, display: "flex", flexDirection: "column", gap: 3,
+}}>
                             <div style={{ fontSize: 9.5, color: T.inkMuted, padding: "3px 6px", textAlign: "left", textTransform: "uppercase", letterSpacing: "0.04em" }}>
                               Contrôle {c.nom} — {m}
                             </div>
