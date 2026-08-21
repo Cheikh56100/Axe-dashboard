@@ -4,20 +4,47 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Variables de thème — le mode sombre est activé en ajoutant la
+   classe "dark" sur <html> (géré par le hook useThemeMode dans App.jsx). */
+:root {
+  --color-app: #F8FAFC;
+  --color-card: #FFFFFF;
+  --color-line: #E2E8F0;
+  --color-ink: #0F172A;
+  --color-inksoft: #334155;
+  --color-inkmuted: #64748B;
+  --color-accent: #2563EB;
+  --color-accent-deep: #1D4ED8;
+  --color-accent-soft: #EFF6FF;
+  --scrollbar-thumb: #CBD5E1;
+}
+.dark {
+  --color-app: #0B1220;
+  --color-card: #131C2E;
+  --color-line: #233047;
+  --color-ink: #EEF2F8;
+  --color-inksoft: #AAB6CC;
+  --color-inkmuted: #6E7C96;
+  --color-accent: #60A5FA;
+  --color-accent-deep: #3B82F6;
+  --color-accent-soft: #152441;
+  --scrollbar-thumb: #2A3752;
+}
+
 html, body, #root { height: 100%; }
-body { background: #F8FAFC; font-family: 'Inter', 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif; }
+body { background: var(--color-app); color: var(--color-ink); font-family: 'Inter', 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif; transition: background-color .2s ease, color .2s ease; }
 
 * { box-sizing: border-box; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 999px; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 999px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 @layer components {
   .card { @apply bg-card border border-line rounded-xl2 shadow-xs; }
   .btn-primary { @apply inline-flex items-center gap-2 rounded-lg bg-accent text-white text-sm font-semibold px-4 py-2 hover:bg-accent-deep transition-colors; }
-  .btn-secondary { @apply inline-flex items-center gap-2 rounded-lg border border-line bg-white text-inksoft text-sm font-medium px-4 py-2 hover:border-accent hover:text-accent transition-colors; }
-  .input-field { @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink placeholder:text-inkmuted focus:outline-none focus:ring-2 focus:ring-accent-soft focus:border-accent transition-colors; }
+  .btn-secondary { @apply inline-flex items-center gap-2 rounded-lg border border-line bg-card text-inksoft text-sm font-medium px-4 py-2 hover:border-accent hover:text-accent transition-colors; }
+  .input-field { @apply w-full rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink placeholder:text-inkmuted focus:outline-none focus:ring-2 focus:ring-accent-soft focus:border-accent transition-colors; }
   .badge-pill { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold; }
   .nav-item { @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-inksoft hover:bg-slate-100 transition-colors; }
   .nav-item-active { @apply bg-accent-soft text-accent-deep font-semibold; }
