@@ -2078,7 +2078,7 @@ function AuthPage() {
         style={{ width: 420, maxWidth: "94vw", background: T.card, borderRadius: T.radiusLg, boxShadow: T.shadowLg, border: `1px solid ${T.line}`, padding: "38px 34px" }}>
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, delay: 0.05, ease: EASE }}
           style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 28 }}>
-          <img src="/novacab-mark.png" alt="NOVACAB" style={{ width: 76, height: 58, objectFit: "contain", marginBottom: 5 }} />
+          <img src="./novacab-mark.png" alt="NOVACAB" style={{ width: 76, height: 58, objectFit: "contain", marginBottom: 5 }} />
           <div style={{ fontFamily: T.serif, fontWeight: 800, fontSize: 22, letterSpacing: "0.03em", color: T.ink }}>NOVA<span style={{ color: "#1D9BF0" }}>CAB</span></div>
           <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.inkMuted, letterSpacing: "0.04em", textTransform: "uppercase", marginTop: 4, textAlign: "center" }}>TOUT VOTRE CABINET. UN SEUL PILOTE. ⭐</div>
         </motion.div>
