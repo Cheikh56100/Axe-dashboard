@@ -19,11 +19,11 @@ export default {
   soft: "var(--color-accent-soft)",
 },
         badge: {
-          green: { bg: "#DCFCE7", text: "#15803D" },
-          red: { bg: "#FEE2E2", text: "#B91C1C" },
-          purple: { bg: "#EDE9FE", text: "#6D28D9" },
-          amber: { bg: "#FEF3C7", text: "#B45309" },
-          slate: { bg: "#F1F5F9", text: "#475569" },
+          green: { bg: "var(--badge-green-bg)", text: "var(--badge-green-text)" },
+          red: { bg: "var(--badge-red-bg)", text: "var(--badge-red-text)" },
+          purple: { bg: "var(--badge-purple-bg)", text: "var(--badge-purple-text)" },
+          amber: { bg: "var(--badge-amber-bg)", text: "var(--badge-amber-text)" },
+          slate: { bg: "var(--badge-slate-bg)", text: "var(--badge-slate-text)" },
         },
       },
       boxShadow: {
