@@ -6,46 +6,116 @@
 
 /* Variables de thème — le mode sombre est activé en ajoutant la
    classe "dark" sur <html> (géré par le hook useThemeMode dans App.jsx). */
-:root {
-  --color-app: #F8FAFC;
+  :root {
+  --color-app: #F6F8FC;
   --color-card: #FFFFFF;
-  --color-line: #E2E8F0;
+  --color-line: #DCE3EE;
   --color-ink: #0F172A;
-  --color-inksoft: #334155;
-  --color-inkmuted: #64748B;
+  --color-inksoft: #475569;
+  --color-inkmuted: #8A98AB;
   --color-accent: #2563EB;
   --color-accent-deep: #1D4ED8;
-  --color-accent-soft: #EFF6FF;
-  --scrollbar-thumb: #CBD5E1;
+  --color-accent-soft: #EAF2FF;
+  --color-paper-deep: #F0F4FA;
+  --color-sidebar: #FFFFFF;
+  --color-sidebar-2: #F5F8FC;
+  --color-sidebar-ink: #334155;
+  --color-sidebar-muted: #94A3B8;
+  --color-sidebar-active: #EAF2FF;
+  --color-sidebar-border: #E1E7F0;
+  --color-scrollbar: #C7D1DE;
+  --color-shadow: rgba(15,23,42,.08);
+  --badge-green-bg: #DCFCE7; --badge-green-text: #15803D;
+  --badge-red-bg: #FEE2E2; --badge-red-text: #B91C1C;
+  --badge-purple-bg: #EDE9FE; --badge-purple-text: #6D28D9;
+  --badge-amber-bg: #FEF3C7; --badge-amber-text: #B45309;
+  --badge-slate-bg: #F1F5F9; --badge-slate-text: #475569;
 }
 .dark {
-  --color-app: #0B1220;
-  --color-card: #131C2E;
-  --color-line: #233047;
-  --color-ink: #EEF2F8;
-  --color-inksoft: #AAB6CC;
-  --color-inkmuted: #6E7C96;
-  --color-accent: #60A5FA;
-  --color-accent-deep: #3B82F6;
-  --color-accent-soft: #152441;
-  --scrollbar-thumb: #2A3752;
+  --color-app: #0B1628;
+  --color-card: #122238;
+  --color-line: #243750;
+  --color-ink: #F5F8FC;
+  --color-inksoft: #C7D2E1;
+  --color-inkmuted: #91A2B8;
+  --color-accent: #2F6DF6;
+  --color-accent-deep: #2459D8;
+  --color-accent-soft: #16345F;
+  --color-paper-deep: #10213A;
+  --color-sidebar: #081323;
+  --color-sidebar-2: #0E1D31;
+  --color-sidebar-ink: #E8EEF7;
+  --color-sidebar-muted: #8EA0B7;
+  --color-sidebar-active: #16345F;
+  --color-sidebar-border: #1C2E47;
+  --color-scrollbar: #30445E;
+  --color-shadow: rgba(0,0,0,.26);
+  --badge-green-bg: #123A2A; --badge-green-text: #6EE7A8;
+  --badge-red-bg: #431F28; --badge-red-text: #FF9CA9;
+  --badge-purple-bg: #30254D; --badge-purple-text: #C4B5FD;
+  --badge-amber-bg: #45351A; --badge-amber-text: #F8C56B;
+  --badge-slate-bg: #1B2A3E; --badge-slate-text: #B9C7D8;
 }
+
 
 html, body, #root { height: 100%; }
 body { background: var(--color-app); color: var(--color-ink); font-family: 'Inter', 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif; transition: background-color .2s ease, color .2s ease; }
+.dark body { background: radial-gradient(circle at 18% 0%, #10213A 0%, #0B1628 48%, #081323 100%); color: var(--color-ink); }
+.dark input, .dark textarea, .dark select, .dark option { color-scheme: dark; }
+.dark input::placeholder, .dark textarea::placeholder { color: #71839B; }
+.dark ::selection { background: #214B86; color: #F5F8FC; }
 
 * { box-sizing: border-box; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 999px; }
+::-webkit-scrollbar-thumb { background: var(--color-scrollbar); border-radius: 999px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 @layer components {
-  .card { @apply bg-card border border-line rounded-xl2 shadow-xs; }
+  .card { @apply bg-card border border-line rounded-xl2 shadow-xs; box-shadow: 0 1px 3px var(--color-shadow), 0 8px 24px -14px var(--color-shadow); }
   .btn-primary { @apply inline-flex items-center gap-2 rounded-lg bg-accent text-white text-sm font-semibold px-4 py-2 hover:bg-accent-deep transition-colors; }
   .btn-secondary { @apply inline-flex items-center gap-2 rounded-lg border border-line bg-card text-inksoft text-sm font-medium px-4 py-2 hover:border-accent hover:text-accent transition-colors; }
   .input-field { @apply w-full rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink placeholder:text-inkmuted focus:outline-none focus:ring-2 focus:ring-accent-soft focus:border-accent transition-colors; }
   .badge-pill { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold; }
-  .nav-item { @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-inksoft hover:bg-slate-100 transition-colors; }
+  .nav-item { @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-inksoft transition-colors; background: transparent; }
+  .nav-item:hover { background: var(--color-paper-deep); color: var(--color-ink); }
   .nav-item-active { @apply bg-accent-soft text-accent-deep font-semibold; }
 }
+
+/* NOVACAB V10 — thème sombre professionnel : profondeur marine, contraste doux,
+   aucune surface blanche parasite et conservation des mêmes couleurs sémantiques. */
+.dark {
+  --color-app: #0A1424;
+  --color-card: #101D31;
+  --color-line: #22344D;
+  --color-ink: #F3F6FB;
+  --color-inksoft: #C8D3E2;
+  --color-inkmuted: #91A1B5;
+  --color-accent: #4D8DFF;
+  --color-accent-deep: #3676E8;
+  --color-accent-soft: #17345F;
+  --color-paper-deep: #0E1A2C;
+  --color-sidebar: #071120;
+  --color-sidebar-2: #0B1729;
+  --color-sidebar-ink: #E7EDF6;
+  --color-sidebar-muted: #8798AF;
+  --color-sidebar-active: #17345F;
+  --color-sidebar-border: #1B2C43;
+  --color-scrollbar: #30445E;
+  --color-shadow: rgba(0,0,0,.34);
+  --badge-green-bg: #123A2A; --badge-green-text: #6EE7A8;
+  --badge-red-bg: #44202A; --badge-red-text: #FF9CA9;
+  --badge-purple-bg: #30254D; --badge-purple-text: #C8B8FF;
+  --badge-amber-bg: #45351A; --badge-amber-text: #F8C56B;
+  --badge-slate-bg: #1A293C; --badge-slate-text: #C1CDDC;
+}
+.dark body {
+  background: linear-gradient(135deg, #071120 0%, #0A1424 46%, #0C182A 100%);
+}
+.dark .card,
+.dark .client-nav-menu {
+  box-shadow: 0 1px 2px rgba(0,0,0,.28), 0 16px 36px -24px rgba(0,0,0,.6);
+}
+.dark .btn-secondary:hover { background: #14253C; }
+.dark .nav-item-active { color: #79A8FF; }
+.dark .nav-item:hover { background: #101F33; }
