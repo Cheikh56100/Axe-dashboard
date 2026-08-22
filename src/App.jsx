@@ -5,10 +5,10 @@ import {
   Clock, TrendingUp, UserCircle2, Plus, Stamp, ChevronDown,
   Filter, ArrowUpRight, CircleDot, Loader2, RefreshCw, History,
   ChevronUp, CalendarDays, CalendarRange, Settings2, Trash2,
-  Pencil, ChevronLeft, ShieldCheck, Home, LogOut, Mail, Lock, UserRound,
+  Pencil, ChevronLeft, ShieldCheck, LogOut, Mail, Lock, UserRound,
   Phone, Briefcase, UserCheck, Wallet, ShieldAlert, Menu, Bell, Clock3, ArrowLeft, ExternalLink,
   Eye, EyeOff, Copy, KeyRound, Download, MapPin, Contact, Scale,
-  CheckCircle2, XCircle
+  CheckCircle2, XCircle, Moon, Laptop2, CircleHelp, Info
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { motion } from "framer-motion";
@@ -20,19 +20,17 @@ import { TASK_STATUTS, TASK_STATUT_BY_CODE, TASK_PRIORITES, TASK_PRIORITE_BY_COD
 import { detectAllAnomalies } from "./services/anomalies";
 
 const T = {
-  paper: "#F3F4F6", paperDeep: "#EEF2FF", ink: "#0F172A", inkSoft: "#475569", inkMuted: "#94A3B8",
-  line: "#E2E8F0", card: "#FFFFFF", gold: "#D97706", goldSoft: "#FEF3C7",
-  green: "#16A34A", greenSoft: "#DCFCE7", red: "#DC2626", redSoft: "#FEE2E2",
-  amber: "#D97706", amberSoft: "#FEF3C7",
-  /* accent sobre façon Kabineo (indigo) */
-  navy: "#2563EB", navySoft: "#EFF6FF",
-  /* sidebar sombre façon "slate/ardoise" : fond bleu-nuit très foncé, textes clairs */
-  sidebarBg: "#0F172A", sidebarBg2: "#1E293B", sidebarInk: "#E2E8F0", sidebarInkMuted: "#94A3B8",
-  sidebarActive: "rgba(99,102,241,0.22)", sidebarBorder: "#1E293B", sidebarAccent: "#60A5FA",
+  paper: "var(--color-app)", paperDeep: "var(--color-paper-deep)", ink: "var(--color-ink)", inkSoft: "var(--color-inksoft)", inkMuted: "var(--color-inkmuted)",
+  line: "var(--color-line)", card: "var(--color-card)", gold: "#D97706", goldSoft: "var(--badge-amber-bg)",
+  green: "#22C55E", greenSoft: "var(--badge-green-bg)", red: "#EF4444", redSoft: "var(--badge-red-bg)",
+  amber: "#F59E0B", amberSoft: "var(--badge-amber-bg)",
+  navy: "var(--color-accent)", navySoft: "var(--color-accent-soft)",
+  sidebarBg: "var(--color-sidebar)", sidebarBg2: "var(--color-sidebar-2)", sidebarInk: "var(--color-sidebar-ink)", sidebarInkMuted: "var(--color-sidebar-muted)",
+  sidebarActive: "var(--color-sidebar-active)", sidebarBorder: "var(--color-sidebar-border)", sidebarAccent: "var(--color-accent)",
   serif: "'Plus Jakarta Sans', 'Inter', -apple-system, sans-serif", mono: "'JetBrains Mono', ui-monospace, monospace", sans: "'Inter', -apple-system, sans-serif",
-  shadow: "0 1px 2px rgba(15,23,42,0.04), 0 8px 20px -6px rgba(15,23,42,0.08)",
-  shadowSm: "0 1px 2px rgba(15,23,42,0.05), 0 1px 3px rgba(15,23,42,0.06)",
-  shadowLg: "0 24px 48px -14px rgba(15,23,42,0.16)",
+  shadow: "0 1px 2px var(--color-shadow), 0 8px 20px -6px var(--color-shadow)",
+  shadowSm: "0 1px 2px var(--color-shadow), 0 1px 3px var(--color-shadow)",
+  shadowLg: "0 24px 48px -14px var(--color-shadow)",
   radius: 16, radiusSm: 12, radiusLg: 20,
 };
 
@@ -626,7 +624,7 @@ function buildHeaderMap(headers) {
   });
   return map;
 }
-function exportClientsToExcel(clients, filename = "registre-clients-axe-experts.xlsx") {
+function exportClientsToExcel(clients, filename = "registre-clients-novacab.xlsx") {
   const rows = clients.map((c) => {
     const row = {};
     EXCEL_COLUMNS.forEach(({ key, label }) => { row[label] = c[key] ?? ""; });
@@ -989,7 +987,7 @@ async function deleteClientRemote(id) {
 /* ---- Équipe : Supabase (table "team"). Un compte = un collaborateur.
    Chaque inscription (email + mot de passe) crée automatiquement, côté base
    de données, une fiche "team" qui lui est liée (voir trigger handle_new_user
-   dans supabase-init.sql). Le rôle (collaborateur / expert / chef_mission / admin)
+   dans supabase-init.sql). Le rôle (collaborateur / expert / chef_mission / gestionnaire_paie / admin)
    et le portefeuille (cabinet) déterminent ce que la personne peut voir et faire. ---- */
 async function loadTeamFromSupabase() {
   const { data, error } = await supabase.from("team")
@@ -1011,7 +1009,7 @@ async function deleteTeamMemberRemote(id) {
   if (error) console.error("Erreur suppression collaborateur :", error.message);
 }
 
-/* ---- Portefeuilles : les cabinets clients de l'outil (Axe Experts, KOF Experts, …) ---- */
+/* ---- Portefeuilles : les cabinets clients de l'outil (NOVACAB, KOF Experts, …) ---- */
 async function loadPortefeuillesFromSupabase() {
   const { data, error } = await supabase.from("portefeuilles").select("id, nom, domaine").order("nom", { ascending: true });
   if (error) { console.error("Erreur chargement portefeuilles :", error.message); return null; }
@@ -1036,8 +1034,37 @@ async function markNotificationReadRemote(id) {
   const { error } = await supabase.from("notifications").update({ lu: true }).eq("id", id);
   if (error) console.error("Erreur notification :", error.message);
 }
+async function loadOrganismesSociauxRemote(portefeuilleId, clientId = null) {
+  if (!portefeuilleId) return [];
+  let q = supabase.from("acces_organismes_sociaux").select("*").eq("portefeuille_id", portefeuilleId).order("client_id", { ascending: true }).order("organisme", { ascending: true });
+  if (clientId) q = q.eq("client_id", clientId);
+  const { data, error } = await q;
+  if (error) { console.error("Erreur chargement accès organismes sociaux :", error.message); return []; }
+  return data || [];
+}
+async function insertOrganismeSocialRemote(row) {
+  const { data, error } = await supabase.from("acces_organismes_sociaux").insert(row).select().single();
+  if (error) { console.error("Erreur création accès organisme social :", error.message); return null; }
+  return data;
+}
+async function updateOrganismeSocialRemote(id, patch) {
+  const { data, error } = await supabase.from("acces_organismes_sociaux").update(patch).eq("id", id).select().single();
+  if (error) { console.error("Erreur mise à jour accès organisme social :", error.message); return null; }
+  return data;
+}
+async function deleteOrganismeSocialRemote(id) {
+  const { error } = await supabase.from("acces_organismes_sociaux").delete().eq("id", id);
+  if (error) { console.error("Erreur suppression accès organisme social :", error.message); return false; }
+  return true;
+}
 
-const ROLE_LABELS = { collaborateur: "Collaborateur", expert: "Expert", chef_mission: "Chef de mission", admin: "Admin" };
+const ROLE_LABELS = { collaborateur: "Collaborateur", expert: "Expert", chef_mission: "Chef de mission", gestionnaire_paie: "Gestionnaire de paie", admin: "Admin" };
+const displayCabinetName = (name) => name || "NOVACAB";
+// La rubrique est visible par tous les utilisateurs actifs du cabinet.
+// Les opérations d'écriture restent réservées aux profils habilités.
+const canViewOrganismesSociaux = (role) => !role || ["collaborateur", "expert", "chef_mission", "gestionnaire_paie", "admin"].includes(role);
+const canEditOrganismesSociaux = (role) => ["admin", "expert", "chef_mission", "gestionnaire_paie"].includes(role);
+const canAccessOrganismesSociaux = canEditOrganismesSociaux;
 
 /* ============================================================
    APP
@@ -1050,6 +1077,7 @@ function CabinetApp({ session, onLogout }) {
   const [portefeuilles, setPortefeuilles] = useState(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("dashboard");
+  const [mailClientId, setMailClientId] = useState(null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("Tous");
   const [regimeFilter, setRegimeFilter] = useState("Tous");
@@ -1064,7 +1092,9 @@ function CabinetApp({ session, onLogout }) {
   const [tasksDb, setTasksDb] = useState([]); // tâches réelles (table "tasks"), indépendantes des échéances fiscales calculées
   const [secteurContent, setSecteurContent] = useState(null);
   const [notifications, setNotifications] = useState([]);
-   const [viewHistory, setViewHistory] = useState([]);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [accountSection, setAccountSection] = useState("profile");
+  const [viewHistory, setViewHistory] = useState([]);
 
   // Empêche le canal temps réel de "rejouer" nos propres écritures juste après qu'on les a envoyées
   const pendingLocalIds = useRef(new Set());
@@ -1523,7 +1553,15 @@ function CabinetApp({ session, onLogout }) {
     });
   };
   const goHome = () => setActiveClientTab(null);
+  const openAccountSection = (section) => {
+    setAccountSection(section);
+    setAccountMenuOpen(false);
+    setActiveClientTab(null);
+    setViewHistory((h) => (view.startsWith("account-") ? h : [...h, view]));
+    setView(`account-${section}`);
+  };
   const navTo = (v) => {
+    if (v === "acces-organismes" && !canViewOrganismesSociaux(myRole)) return;
     setViewHistory((h) => (v === view ? h : [...h, view]));
     setView(v);
     setActiveClientTab(null);
@@ -1555,13 +1593,15 @@ function CabinetApp({ session, onLogout }) {
         collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed}
         mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen} />
       <div style={S.main}>
-        <TopBar search={search} setSearch={setSearch} saveStatus={saveStatus} me={me} meColor={meColor}
+        <TopBar search={search} setSearch={setSearch} saveStatus={saveStatus} me={me} meRole={myRole} meColor={meColor}
+          cabinetName={displayCabinetName(myRow?.cabinet_nom || myPortefeuille?.nom)}
           openTabs={openClientTabs} activeTab={activeClientTab} onHome={goHome} onBack={goBack} canGoBack={canGoBack}
           onSelectTab={(id) => setActiveClientTab(id)} onCloseTab={closeClientTab}
           onNav={navTo} onOpenClient={openClientTab} onNewClient={() => setShowAddClient(true)} clients={myClients}
           notifCount={myTasks.filter((t) => t.bucket === "retard").length || undefined}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           notifications={[...echeanceAlerts, ...notifications]} onMarkNotificationRead={markNotificationRead} onOpenClient2={openClientTab}
+          accountMenuOpen={accountMenuOpen} setAccountMenuOpen={setAccountMenuOpen} onOpenAccount={openAccountSection} onLogout={onLogout}
  />
         <div className="px-3 py-3 md:px-7 md:py-6" style={{ ...S.content, padding: undefined }}>
           {activeClient ? (
@@ -1575,6 +1615,7 @@ function CabinetApp({ session, onLogout }) {
   client={activeClient}
   team={visibleTeam}
   me={me}
+  meRole={myRole}
   meId={myRow?.id}
   portefeuilleId={myPortefeuilleId}
   onUpdate={updateClient}
@@ -1585,6 +1626,11 @@ function CabinetApp({ session, onLogout }) {
           ) : (
             <>
               {view === "pilotage" && <PilotageView clients={myClients} tasks={[...visibleTasksDb, ...autoTasksForPage]} team={visibleTeam} me={me} onOpenClient={openClientTab} onView={navTo} />}
+              {view.startsWith("account-") && (
+                <AccountPage section={view.replace("account-", "")} myRow={myRow} myPortefeuille={myPortefeuille} session={session} me={me} meRole={myRole}
+                  cabinetName={displayCabinetName(myRow?.cabinet_nom || myPortefeuille?.nom)} onUpdateMember={updateTeamMember} onLogout={onLogout}
+                  onSectionChange={(section) => openAccountSection(section)} />
+              )}
               {view === "dashboard" && (
                 <Dashboard myClients={myClients} tasks={myTasks} me={me} meRole={myRole} team={visibleTeam}
                   onOpenClient={(id) => { navTo("clients"); openClientTab(id); }} setView={navTo}
@@ -1656,7 +1702,8 @@ onImport={importClients} onAddClient={addClient} />
                     });
                   }
                 }}
-                onUpdate={updateClient} onOpenClient={openClientTab} />}
+                onUpdate={updateClient} onOpenClient={openClientTab} onGenerateMail={(clientId) => { setMailClientId(clientId); navTo("mails-types"); }} />}
+              {view === "mails-types" && <MailTypesView clients={myClients} initialClientId={mailClientId} me={me} cabinetName={displayCabinetName(myRow?.cabinet_nom || myPortefeuille?.nom)} />}
               {view === "bilans" && <BilansView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "acomptes" && <AcomptesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "prestations-juridiques" && <LegalServicesView clients={myClients} requests={legalRequests} setRequests={setLegalRequests} />}
@@ -1670,7 +1717,8 @@ onImport={importClients} onAddClient={addClient} />
               {view === "honoraires" && <HonorairesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} meId={myRow?.id} portefeuilleId={myPortefeuilleId} onUpdate={updateClient} />}
 {view === "gestionnaire-paie" && <GestionnairePaieView clients={myClients} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
               {view === "cotisations" && <CotisationsSocialesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
-              {view === "social" && <CadreSocialView clients={myClients} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} />}
+              {view === "social" && <SocialPaieCentre clients={myClients} team={visibleTeam} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} meRole={myRole} onUpdate={updateClient} portefeuilleId={myPortefeuilleId} onOpenClient={openClientTab} onCreateTask={handleCreateTask} />}
+              {view === "acces-organismes" && canViewOrganismesSociaux(myRole) && <AccesOrganismesSociauxView clients={(clients || []).filter((c) => c.portefeuilleId === myPortefeuilleId)} portefeuilleId={myPortefeuilleId} me={me} meRole={myRole} onOpenClient={openClientTab} />}
               {view === "fiscal" && <SuiviFiscalView clients={myClients} team={team} />}
               {view === "resiliation" && <ResiliationsView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} meId={myRow?.id} portefeuilleId={myPortefeuilleId} onUpdate={updateClient} />}
 {view === "missionsExcep" && <MissionsExceptionnellesView clients={myClients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={updateClient} team={team} />}
@@ -1711,6 +1759,175 @@ onImport={importClients} onAddClient={addClient} />
 }
 
 /* ============================================================
+   MAILS TYPES — génération de mails adaptables au dossier
+   ============================================================ */
+const NOVACAB_MAIL_TEMPLATES = [
+  {
+    id: "relance-pieces", category: "Relances", title: "Relance de pièces", description: "Pièces manquantes ou à transmettre",
+    subject: "Pièces comptables à nous transmettre — {{client}}",
+    body: "Bonjour {{contact}},\n\nNous revenons vers vous concernant les pièces comptables de {{client}}.\n\nAfin de poursuivre le traitement de votre dossier dans les meilleures conditions, pourriez-vous nous transmettre les éléments encore manquants dès que possible ?\n\nMerci par avance pour votre retour.\n\nBien cordialement,\n{{cabinet}}"
+  },
+  {
+    id: "relance-paiement", category: "Relances", title: "Relance de paiement", description: "Facture ou honoraires arrivés à échéance",
+    subject: "Relance — règlement en attente — {{client}}",
+    body: "Bonjour {{contact}},\n\nSauf erreur de notre part, le règlement concernant {{client}} reste à ce jour en attente.\n\nNous vous remercions de bien vouloir procéder à sa régularisation ou de nous indiquer si le paiement a déjà été effectué.\n\nBien cordialement,\n{{cabinet}}"
+  },
+  {
+    id: "relance-2", category: "Relances", title: "Deuxième rappel", description: "Relance ferme mais professionnelle",
+    subject: "Deuxième rappel — éléments en attente — {{client}}",
+    body: "Bonjour {{contact}},\n\nMalgré notre précédent message, nous n'avons pas encore reçu les éléments nécessaires concernant {{client}}.\n\nMerci de nous transmettre ces informations dans les meilleurs délais afin d'éviter tout retard dans le traitement de votre dossier.\n\nNous restons à votre disposition.\n\nBien cordialement,\n{{cabinet}}"
+  },
+  {
+    id: "revalorisation", category: "Budget", title: "Revalorisation de budget", description: "Proposition d'ajustement des honoraires",
+    subject: "Évolution de notre accompagnement — {{client}}",
+    body: "Bonjour {{contact}},\n\nAprès analyse de l'évolution de votre activité et du temps consacré à votre dossier, nous souhaitons échanger avec vous au sujet de l'adaptation de notre budget d'honoraires.\n\nL'objectif est de faire correspondre au mieux notre niveau d'accompagnement à vos besoins actuels et aux travaux réalisés.\n\nNous vous proposons d'en discuter lors d'un échange à votre convenance.\n\nBien cordialement,\n{{cabinet}}"
+  },
+  {
+    id: "tva", category: "TVA", title: "Déclaration de TVA", description: "Synthèse automatique des principaux montants",
+    subject: "Déclaration de TVA — {{client}} — {{periode}}",
+    body: "Bonjour {{contact}},\n\nNous vous informons que la déclaration de TVA de {{client}} pour la période {{periode}} a été préparée.\n\n• Montant HT encaissé : {{ht_encaisse}}\n• TVA collectée : {{tva_collectee}}\n• TVA déductible : {{tva_deductible}}\n• TVA sous-traitant : {{tva_sous_traitant}}\n• Montant à payer / crédit : {{montant_a_payer}}\n\n{{autres_tva}}\n\nNous restons à votre disposition pour toute question.\n\nBien cordialement,\n{{cabinet}}"
+  },
+  {
+    id: "remerciement", category: "Autres", title: "Remerciement paiement", description: "Confirmation de bonne réception d'un règlement",
+    subject: "Confirmation de votre règlement — {{client}}",
+    body: "Bonjour {{contact}},\n\nNous vous remercions pour votre règlement et vous confirmons sa bonne prise en compte.\n\nNous restons à votre disposition pour toute question concernant votre dossier.\n\nBien cordialement,\n{{cabinet}}"
+  },
+  {
+    id: "envoi-document", category: "Autres", title: "Envoi de document", description: "Transmission d'un document au client",
+    subject: "Transmission de document — {{client}}",
+    body: "Bonjour {{contact}},\n\nVeuillez trouver ci-joint le document concernant {{client}}.\n\nNous restons à votre disposition si vous souhaitez des précisions complémentaires.\n\nBien cordialement,\n{{cabinet}}"
+  },
+  {
+    id: "rdv", category: "Autres", title: "Rendez-vous / réunion", description: "Proposition de créneau",
+    subject: "Proposition de rendez-vous — {{client}}",
+    body: "Bonjour {{contact}},\n\nNous souhaiterions faire un point avec vous concernant {{client}}.\n\nPouvez-vous nous indiquer vos disponibilités afin que nous convenions d'un créneau ?\n\nBien cordialement,\n{{cabinet}}"
+  },
+];
+
+function formatMailAmount(v) {
+  if (v === undefined || v === null || String(v).trim() === "") return "À renseigner";
+  return String(v).includes("€") ? String(v) : `${v} €`;
+}
+function buildNovacabMail(template, client, cabinetName) {
+  const contact = client?.contact?.contactNom || "Madame, Monsieur";
+  const period = client?.tvaRegime === "CA12" ? "CA12 annuel" : currentMonthKey();
+  const d = client?.tvaDetails?.[client?.tvaRegime === "CA12" ? "Mai" : currentMonthKey()] || {};
+  const values = {
+    client: client?.nom || "votre société",
+    contact,
+    cabinet: cabinetName || "NOVACAB",
+    periode: period,
+    ht_encaisse: formatMailAmount(d.htEncaisse),
+    tva_collectee: formatMailAmount(d.tvaCollectee),
+    tva_deductible: formatMailAmount(d.tvaDeductible),
+    tva_sous_traitant: d.tvaSousTraitant ? formatMailAmount(d.tvaSousTraitant) : "Non applicable",
+    montant_a_payer: d.montantAPayer ? formatMailAmount(d.montantAPayer) : "À renseigner",
+    autres_tva: d.autres || "Aucune autre information particulière."
+  };
+  const replace = (text) => String(text || "").replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_, key) => values[key] ?? "");
+  return { subject: replace(template.subject), body: replace(template.body) };
+}
+
+function MailTypesView({ clients, initialClientId, me, cabinetName }) {
+  const safeClients = clients || [];
+  const [selectedClientId, setSelectedClientId] = useState(initialClientId || safeClients[0]?.id || "");
+  const [templateId, setTemplateId] = useState("tva");
+  const [category, setCategory] = useState("Tous");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [notice, setNotice] = useState("");
+  const signatureKey = `novacab-mail-signature-${me || "user"}`;
+  const [signatureEnabled, setSignatureEnabled] = useState(() => { try { return localStorage.getItem(`${signatureKey}-enabled`) !== "false"; } catch { return true; } });
+  const [signatureText, setSignatureText] = useState(() => { try { return localStorage.getItem(`${signatureKey}-text`) || `${me || "Nom Prénom"}\nCollaborateur comptable\n${cabinetName || "Axe Experts"}\nE-mail professionnel · Téléphone`; } catch { return `${me || "Nom Prénom"}\nCollaborateur comptable\n${cabinetName || "Axe Experts"}`; } });
+  const [customTemplates, setCustomTemplates] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("novacab-mail-templates") || "[]"); } catch { return []; }
+  });
+  const selectedClient = safeClients.find((c) => c.id === selectedClientId) || safeClients[0] || null;
+  const templates = [...NOVACAB_MAIL_TEMPLATES, ...customTemplates];
+  const filtered = category === "Tous" ? templates : templates.filter((t) => t.category === category);
+
+  useEffect(() => {
+    if (initialClientId && safeClients.some((c) => c.id === initialClientId)) setSelectedClientId(initialClientId);
+  }, [initialClientId, safeClients]);
+  useEffect(() => {
+    if (!selectedClientId && safeClients[0]) setSelectedClientId(safeClients[0].id);
+  }, [safeClients, selectedClientId]);
+  useEffect(() => {
+    const tpl = templates.find((t) => t.id === templateId) || NOVACAB_MAIL_TEMPLATES[0];
+    const built = buildNovacabMail(tpl, selectedClient, cabinetName);
+    setSubject(built.subject); setBody(signatureEnabled && signatureText.trim() ? `${built.body.replace(/\n+$/, "")}\n\n${signatureText.trim()}` : built.body);
+  }, [templateId, selectedClientId, cabinetName, signatureEnabled, signatureText]);
+  useEffect(() => { try { localStorage.setItem(`${signatureKey}-enabled`, String(signatureEnabled)); localStorage.setItem(`${signatureKey}-text`, signatureText); } catch {} }, [signatureEnabled, signatureText, signatureKey]);
+
+  const persistCustom = (next) => { setCustomTemplates(next); try { localStorage.setItem("novacab-mail-templates", JSON.stringify(next)); } catch {} };
+  const copyMail = async () => {
+    try { await navigator.clipboard.writeText(`Objet : ${subject}\n\n${body}`); setNotice("Mail copié dans le presse-papiers."); }
+    catch { setNotice("Copie impossible sur cet appareil."); }
+    setTimeout(() => setNotice(""), 1800);
+  };
+  const openMail = () => {
+    const to = selectedClient?.contact?.email || "";
+    window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+  const createTemplate = () => {
+    const id = `custom-${Date.now()}`;
+    const tpl = { id, category: "Personnalisés", title: "Nouveau modèle", description: "Modèle personnalisé", subject: "Objet — {{client}}", body: "Bonjour {{contact}},\n\nVotre message ici…\n\nBien cordialement,\n{{cabinet}}" };
+    persistCustom([...customTemplates, tpl]); setTemplateId(id); setCategory("Tous");
+  };
+  const updateCustom = (field, value) => {
+    if (!templateId.startsWith("custom-")) return;
+    const next = customTemplates.map((t) => t.id === templateId ? { ...t, [field]: value } : t);
+    persistCustom(next);
+  };
+
+  return (
+    <div>
+      <Reveal><h1 style={{ fontFamily: T.serif, fontSize: 18, fontWeight: 800, color: T.ink, margin: "0 0 5px" }}>Mails types</h1></Reveal>
+      <p style={{ color: T.inkMuted, fontSize: 11.5, margin: "0 0 18px", lineHeight: 1.55 }}>Générez rapidement des mails professionnels, adaptez-les au dossier puis copiez-les ou ouvrez directement votre messagerie.</p>
+      <div className="novacab-mail-grid" style={{ display: "grid", gridTemplateColumns: "minmax(240px, 0.9fr) minmax(420px, 1.5fr)", gap: 14, alignItems: "start" }}>
+        <Panel title="Modèles">
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 10 }}>
+            {["Tous", "Relances", "Budget", "TVA", "Autres", "Personnalisés"].map((c) => <button key={c} onClick={() => setCategory(c)} style={{ border: `1px solid ${category === c ? T.navy : T.line}`, background: category === c ? T.navySoft : T.card, color: category === c ? T.navy : T.inkMuted, borderRadius: 999, padding: "5px 8px", cursor: "pointer", fontSize: 10.5, fontWeight: 700 }}>{c}</button>)}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {filtered.map((t) => <button key={t.id} onClick={() => setTemplateId(t.id)} style={{ textAlign: "left", border: `1px solid ${templateId === t.id ? T.navy : T.line}`, background: templateId === t.id ? T.navySoft : T.card, borderRadius: 10, padding: "9px 10px", cursor: "pointer" }}><div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>{t.title}</div><div style={{ fontSize: 10, color: T.inkMuted, marginTop: 2 }}>{t.description}</div></button>)}
+            {filtered.length === 0 && <EmptyNote text="Aucun modèle dans cette catégorie." />}
+          </div>
+          <button onClick={createTemplate} style={{ width: "100%", marginTop: 10, padding: "8px 10px", borderRadius: 9, border: `1px dashed ${T.navy}`, background: "transparent", color: T.navy, cursor: "pointer", fontSize: 11.5, fontWeight: 700 }}><Plus size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} /> Nouveau modèle personnalisé</button>
+        </Panel>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Panel title="Dossier destinataire">
+            <div className="novacab-mail-recipient-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div><div style={{ fontSize: 10.5, color: T.inkMuted, marginBottom: 5 }}>Client</div><select value={selectedClient?.id || ""} onChange={(e) => setSelectedClientId(e.target.value)} style={{ ...inputStyle, width: "100%" }}>{safeClients.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}</select></div>
+              <div><div style={{ fontSize: 10.5, color: T.inkMuted, marginBottom: 5 }}>E-mail</div><div style={{ ...inputStyle, width: "100%", color: selectedClient?.contact?.email ? T.ink : T.inkMuted }}>{selectedClient?.contact?.email || "E-mail non renseigné"}</div></div>
+            </div>
+          </Panel>
+          <Panel title="Signature mail">
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:8}}>
+              <div><div style={{fontSize:11.5,fontWeight:800,color:T.ink}}>Insérer automatiquement ma signature</div><div style={{fontSize:10.5,color:T.inkMuted,marginTop:2}}>Elle sera ajoutée en bas des mails générés.</div></div>
+              <ToggleBtn on={signatureEnabled} onClick={() => setSignatureEnabled(v => !v)} />
+            </div>
+            {signatureEnabled && <textarea value={signatureText} onChange={e=>setSignatureText(e.target.value)} rows={5} style={{...inputStyle,width:"100%",resize:"vertical",lineHeight:1.45}} placeholder="Votre signature professionnelle…" />}
+          </Panel>
+          <Panel title="Éditeur du mail">
+            {templateId.startsWith("custom-") && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}><input value={templates.find(t => t.id === templateId)?.title || ""} onChange={(e) => updateCustom("title", e.target.value)} placeholder="Nom du modèle" style={inputStyle} /><input value={templates.find(t => t.id === templateId)?.description || ""} onChange={(e) => updateCustom("description", e.target.value)} placeholder="Description" style={inputStyle} /></div>}
+            <div style={{ marginBottom: 10 }}><div style={{ fontSize: 10.5, color: T.inkMuted, marginBottom: 5 }}>Objet</div><input value={subject} onChange={(e) => { setSubject(e.target.value); updateCustom("subject", e.target.value); }} style={{ ...inputStyle, width: "100%" }} /></div>
+            <div><div style={{ fontSize: 10.5, color: T.inkMuted, marginBottom: 5 }}>Message</div><textarea value={body} onChange={(e) => { setBody(e.target.value); updateCustom("body", e.target.value); }} rows={16} style={{ ...inputStyle, width: "100%", resize: "vertical", lineHeight: 1.55, fontFamily: T.sans }} /></div>
+            <div style={{ display: "flex", gap: 7, justifyContent: "flex-end", alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+              {notice && <span style={{ fontSize: 11, color: T.green, marginRight: "auto" }}>{notice}</span>}
+              <button onClick={copyMail} style={{ padding: "8px 11px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, color: T.inkSoft, cursor: "pointer", fontSize: 11.5, fontWeight: 700 }}><Copy size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} /> Copier</button>
+              <button onClick={openMail} style={{ padding: "8px 12px", borderRadius: 9, border: "none", background: T.navy, color: "#fff", cursor: "pointer", fontSize: 11.5, fontWeight: 700 }}><ExternalLink size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} /> Ouvrir dans la messagerie</button>
+            </div>
+          </Panel>
+          <div style={{ fontSize: 10.5, color: T.inkMuted, lineHeight: 1.5 }}>Variables disponibles : <strong>{"{{client}}"}</strong>, <strong>{"{{contact}}"}</strong>, <strong>{"{{cabinet}}"}</strong>, <strong>{"{{periode}}"}</strong>, et pour la TVA : <strong>{"{{ht_encaisse}}"}</strong>, <strong>{"{{tva_collectee}}"}</strong>, <strong>{"{{tva_deductible}}"}</strong>, <strong>{"{{tva_sous_traitant}}"}</strong>, <strong>{"{{montant_a_payer}}"}</strong>.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    TOAST DE SAUVEGARDE — retour visuel clair après modification
    d'un champ (ex. Infos générales), en plus du petit indicateur
    discret dans la barre du haut.
@@ -1741,6 +1958,13 @@ function SaveToast({ status }) {
    déconnexion, expiration) via supabase.auth.onAuthStateChange.
    ============================================================ */
 export default function App() {
+  useEffect(() => {
+    const saved = localStorage.getItem("novacab-theme") || "light";
+    const apply = (value) => document.documentElement.classList.toggle("dark", value === "dark");
+    if (saved === "system") {
+      apply(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    } else apply(saved === "dark" ? "dark" : "light");
+  }, []);
   const [session, setSession] = useState(undefined); // undefined = vérification en cours, null = déconnecté
   const [recoveryMode, setRecoveryMode] = useState(false);
 
@@ -1854,11 +2078,9 @@ function AuthPage() {
         style={{ width: 420, maxWidth: "94vw", background: T.card, borderRadius: T.radiusLg, boxShadow: T.shadowLg, border: `1px solid ${T.line}`, padding: "38px 34px" }}>
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, delay: 0.05, ease: EASE }}
           style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 28 }}>
-          <div style={{ width: 46, height: 46, borderRadius: 14, background: T.navy, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14, boxShadow: "0 8px 20px -6px rgba(79,70,229,0.45)" }}>
-            <LayoutGrid size={21} color="#fff" strokeWidth={2.2} />
-          </div>
-          <div style={{ fontFamily: T.serif, fontWeight: 800, fontSize: 19, color: T.ink }}>AXE-EXPERTS</div>
-          <div style={{ fontFamily: T.mono, fontSize: 10.5, color: T.inkMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginTop: 3 }}>Registre &amp; Pilotage</div>
+          <img src="/novacab-mark.png" alt="NOVACAB" style={{ width: 76, height: 58, objectFit: "contain", marginBottom: 5 }} />
+          <div style={{ fontFamily: T.serif, fontWeight: 800, fontSize: 22, letterSpacing: "0.03em", color: T.ink }}>NOVA<span style={{ color: "#1D9BF0" }}>CAB</span></div>
+          <div style={{ fontFamily: T.mono, fontSize: 9.5, color: T.inkMuted, letterSpacing: "0.04em", textTransform: "uppercase", marginTop: 4, textAlign: "center" }}>TOUT VOTRE CABINET. UN SEUL PILOTE. ⭐</div>
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, delay: 0.1, ease: EASE }}
@@ -1879,7 +2101,7 @@ function AuthPage() {
               <label style={authLabelStyle}>Nom et prénom</label>
               <div style={{ position: "relative" }}>
                 <UserRound size={15} style={authIconStyle} />
-                <input required value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="ex. Cheikh Diallo" style={authInputStyle} />
+                <input required value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="ex. Louis Dupont" style={authInputStyle} />
               </div>
             </div>
           )}
@@ -1904,10 +2126,10 @@ function AuthPage() {
               <label style={authLabelStyle}>Nom du cabinet</label>
               <div style={{ position: "relative" }}>
                 <Briefcase size={15} style={authIconStyle} />
-                <input value={cabinetNom} onChange={(e) => setCabinetNom(e.target.value)} placeholder="ex. Cabinet Dupont & Associés" style={authInputStyle} />
+                <input required value={cabinetNom} onChange={(e) => setCabinetNom(e.target.value)} placeholder="ex. Cabinet Dupont & Associés" style={authInputStyle} />
               </div>
               <div style={{ fontSize: 10.5, color: T.inkMuted, marginTop: 5, lineHeight: 1.5 }}>
-                Si votre cabinet a déjà un accès (@axe-experts.com, @kof-experts.com), votre compte sera activé immédiatement.
+                Si votre cabinet dispose déjà d’un accès configuré, votre compte pourra être rattaché automatiquement.
                 Sinon, cette information nous sert à vous recontacter pour activer votre accès.
               </div>
             </div>
@@ -1978,6 +2200,8 @@ function GlobalStyle() {
       .topIconBtn:hover { background:${T.paperDeep}; color:${T.ink}; }
       .scrollbar::-webkit-scrollbar { width: 8px; height: 8px; } .scrollbar::-webkit-scrollbar-thumb { background: ${T.line}; border-radius: 8px; }
       input, select, button, textarea { font-family: ${T.sans}; }
+      @media (max-width: 900px) { .novacab-mail-grid { grid-template-columns: 1fr !important; } }
+      @media (max-width: 560px) { .novacab-mail-recipient-grid { grid-template-columns: 1fr !important; } }
       button { transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease, opacity .15s ease, border-color .15s ease; }
       button.clickable:hover, div.clickable:hover { transform: translateY(-1px); }
       button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 2px solid ${T.navy}; outline-offset: 2px; }
@@ -2056,12 +2280,14 @@ function PendingScreen({ row, onLogout }) {
     <div style={{ ...S.appShell, alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16, background: `radial-gradient(circle at 20% 15%, ${T.amberSoft} 0%, ${T.paper} 45%), radial-gradient(circle at 85% 85%, #F1F5F9 0%, ${T.paper} 40%)` }}>
       <GlobalStyle />
       <Reveal style={{ textAlign: "center", maxWidth: 460, padding: 36, background: T.card, borderRadius: T.radiusLg, boxShadow: T.shadowLg, border: `1px solid ${T.line}` }}>
+        <img src="/novacab-mark.png" alt="NOVACAB" style={{ width: 62, height: 50, objectFit: "contain", margin: "0 auto 4px" }} />
+        <div style={{ fontFamily: T.serif, fontWeight: 800, fontSize: 18, color: T.ink, marginBottom: 14 }}>NOVA<span style={{ color: "#1D9BF0" }}>CAB</span></div>
         <div style={{ width: 44, height: 44, borderRadius: 14, background: T.amber, margin: "0 auto 16px", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <Clock size={20} color="#fff" strokeWidth={2.2} />
         </div>
         <h1 style={{ fontFamily: T.serif, fontWeight: 700, fontSize: 18, margin: "0 0 8px", color: T.ink }}>Inscription en attente de validation</h1>
         <p style={{ color: T.inkMuted, fontSize: 12.5, lineHeight: 1.7, marginBottom: 10 }}>
-          Merci {row.nom} — votre adresse <strong>{row.email}</strong> n'est pas encore rattachée à un cabinet sur cet outil.
+          Merci {row.nom} — votre demande pour <strong style={{ color: T.navy, fontSize: 14 }}>{row.cabinet_nom || "votre cabinet"}</strong> est bien enregistrée.
         </p>
         <p style={{ color: T.inkMuted, fontSize: 12.5, lineHeight: 1.7, marginBottom: 22 }}>
           Notre équipe va prendre contact avec vous prochainement pour échanger sur votre cabinet et activer votre accès.
@@ -2076,78 +2302,85 @@ function PendingScreen({ row, onLogout }) {
    SIDEBAR
    ============================================================ */
 function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, counts, collapsed, setCollapsed, mobileOpen, setMobileOpen }) {
-    const GROUPS = [
+    const MANAGEMENT_ROLES = ["admin", "expert", "chef_mission"];
+  const GROUPS = [
     {
-      id: "clients-accueil", label: "Gestion clients & accueil",
-      items: [
-        { id: "clients", label: "Registre clients", icon: Users, badge: counts.total },
-        { id: "pilotage", label: "Pilotage cabinet", icon: LayoutGrid },
-        { id: "mission", label: "Dossiers en accueil", icon: ClipboardCheck, badge: counts.missionIncomplete, badgeTone: "amber" },
-        { id: "regimes", label: "Changements de régime", icon: RefreshCw },
-        { id: "honoraires", label: "Honoraires", icon: Wallet },
-      ],
-    },
-    {
-  id: "fiscalite", label: "Fiscalité & comptabilité",
-  items: [
-    { id: "tva", label: "TVA (CA3 / CA12)", icon: Receipt, badge: counts.tvaAlert, badgeTone: "amber" },
-    { id: "acomptes", label: "Impôts & cotisations", icon: Landmark },
-    { id: "bilans", label: "Bilans", icon: FileWarning, badge: counts.bilanRetard, badgeTone: "red" },
-    { id: "revision", label: "Révision comptable", icon: Search },
-    { id: "surveillance", label: "À surveiller", icon: ShieldAlert, badge: counts.anomalies, badgeTone: "red" },
-    { id: "fiscal", label: "Suivi fiscal", icon: CalendarDays },
-  ],
-},
-    {
-      id: "juridique", label: "Juridique",
-      items: [
-        { id: "prestations-juridiques", label: "Prestations juridiques", icon: Scale },
-        { id: "age", label: "Assemblées (AGE / AGO)", icon: Building2, badge: counts.ageAlert, badgeTone: "amber" },
-      ],
-    },
-    {
-      id: "ressources", label: "Ressources sectorielles",
-      items: [
-        { id: "aides-secteur", label: "Actualités & Aides", icon: Briefcase },
-      ],
-    },
-    {
-  id: "evenements-client", label: "Événements client",
-  items: [
-    { id: "resiliation", label: "Résiliations", icon: FileWarning },
-    { id: "missionsExcep", label: "Missions exceptionnelles", icon: Briefcase },
-    { id: "reprise", label: "Reprises", icon: RefreshCw },
-  ],
-},
-    {
-      id: "social", label: "Social & paie",
-      items: [
-        { id: "gestionnaire-paie", label: "Gestionnaire de paie", icon: Contact },
-        { id: "cotisations", label: "Cotisations sociales", icon: Landmark },
-        { id: "social", label: "Suivi social (OD salaires)", icon: UserCheck },
-      ],
-    },
-    {
-      id: "organisation", label: "Organisation & équipe",
+      id: "pilotage-quotidien", label: "Pilotage & quotidien",
       items: [
         { id: "mes-taches", label: "Mes tâches", icon: ClipboardCheck, badge: counts.tachesActives, badgeTone: "amber" },
         { id: "planning", label: "Mon planning", icon: CalendarRange },
-        { id: "equipe", label: "Équipe", icon: Settings2 },
+        { id: "pilotage", label: "Pilotage cabinet", icon: LayoutGrid, roles: MANAGEMENT_ROLES },
+        { id: "equipe", label: "Équipe", icon: Settings2, roles: MANAGEMENT_ROLES },
+      ],
+    },
+    {
+      id: "clients-missions", label: "Clients & missions",
+      items: [
+        { id: "clients", label: "Registre clients", icon: Users, badge: counts.total },
+        { id: "mission", label: "Dossiers en accueil", icon: ClipboardCheck, badge: counts.missionIncomplete, badgeTone: "amber" },
+        { id: "honoraires", label: "Honoraires", icon: Wallet, roles: MANAGEMENT_ROLES },
+        { id: "regimes", label: "Changements de régime", icon: RefreshCw },
+        {
+          id: "evenements-client", label: "Événements client", icon: CalendarDays,
+          children: [
+            { id: "resiliation", label: "Résiliations", icon: FileWarning },
+            { id: "reprise", label: "Reprises", icon: RefreshCw },
+            { id: "missionsExcep", label: "Missions exceptionnelles", icon: Briefcase },
+          ],
+        },
+      ],
+    },
+    {
+      id: "compta-fiscalite", label: "Comptabilité & fiscalité",
+      items: [
+        { id: "revision", label: "Révision comptable", icon: Search },
+        { id: "tva", label: "TVA (CA3 / CA12)", icon: Receipt, badge: counts.tvaAlert, badgeTone: "amber" },
+        { id: "acomptes", label: "Impôts & cotisations", icon: Landmark },
+        { id: "bilans", label: "Bilans", icon: FileWarning, badge: counts.bilanRetard, badgeTone: "red" },
+        { id: "fiscal", label: "Suivi fiscal", icon: CalendarDays },
+        { id: "surveillance", label: "À surveiller", icon: ShieldAlert, badge: counts.anomalies, badgeTone: "red" },
+      ],
+    },
+    {
+      id: "social-juridique", label: "Social & juridique",
+      subgroups: [
+        {
+          id: "social", label: "Social",
+          items: [
+            { id: "social", label: "Suivi social", icon: UserCheck },
+            { id: "cotisations", label: "Cotisations sociales", icon: Landmark },
+            { id: "gestionnaire-paie", label: "Gestionnaire de paie", icon: Contact },
+            { id: "acces-organismes", label: "Accès organismes sociaux", icon: ShieldCheck },
+          ],
+        },
+        {
+          id: "juridique", label: "Juridique",
+          items: [
+            { id: "prestations-juridiques", label: "Prestations juridiques", icon: Scale },
+            { id: "age", label: "Assemblées (AGE / AGO)", icon: Building2, badge: counts.ageAlert, badgeTone: "amber" },
+          ],
+        },
+      ],
+    },
+    {
+      id: "cabinet-outils", label: "Cabinet & outils",
+      items: [
+        { id: "mails-types", label: "Mails types", icon: Mail },
       ],
     },
   ];
-  const groupOf = (v) => GROUPS.find((g) => g.items.some((it) => it.id === v))?.id;
-  const [openGroups, setOpenGroups] = useState(() => new Set([groupOf(view) || GROUPS[0].id]));
-  const toggleGroup = (id) => setOpenGroups((prev) => {
+
+  const [openGroups, setOpenGroups] = useState(() => new Set(GROUPS.map((g) => g.id)));
+  const toggleGroup = (groupId) => setOpenGroups((prev) => {
     const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
+    next.has(groupId) ? next.delete(groupId) : next.add(groupId);
     return next;
   });
-  useEffect(() => {
-    const g = groupOf(view);
-    if (g) setOpenGroups((prev) => (prev.has(g) ? prev : new Set(prev).add(g)));
-  }, [view]);
 
+  const isAllowed = (item) => !item.roles || item.roles.includes(meRole);
+  const flattenItems = (items = []) => items.flatMap((it) => [it, ...(it.children || [])]);
+  const groupItems = (g) => g.subgroups ? g.subgroups.flatMap((sg) => flattenItems(sg.items)) : flattenItems(g.items);
+  const groupOf = (v) => GROUPS.find((g) => groupItems(g).some((it) => it.id === v))?.id;
   const meColor = team.find((t) => t.nom === me)?.color || T.navy;
 
   const badgeToneCls = (tone) => tone === "red" ? "bg-badge-red-bg text-badge-red-text" : tone === "amber" ? "bg-badge-amber-bg text-badge-amber-text" : "bg-accent-soft text-accent-deep";
@@ -2170,13 +2403,13 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
       );
     };
     return (
-      <div className={`h-full flex-shrink-0 bg-white text-inksoft flex flex-col py-5 px-3 border-r border-line transition-[width] duration-200 ${isCollapsed ? "w-[76px]" : "w-[258px]"}`}>
+      <div className={`h-full flex-shrink-0 text-inksoft flex flex-col py-5 px-3 border-r border-line transition-[width] duration-200 ${isCollapsed ? "w-[76px]" : "w-[258px]"}`} style={{background:T.sidebarBg}}>
         <div className={`flex items-center gap-2.5 pb-4 mb-1 border-b border-line ${isCollapsed ? "justify-center px-0" : "px-1.5"}`}>
-          <div className="w-8 h-8 rounded-[10px] bg-accent flex items-center justify-center shrink-0 font-extrabold text-white text-sm">A</div>
+          <img src="/novacab-mark.png" alt="NOVACAB" className="w-9 h-9 object-contain shrink-0 rounded-lg" />
           {!isCollapsed && (
-            <div>
-              <div className="text-[13px] font-extrabold tracking-tight text-ink">AXE-EXPERTS</div>
-              <div className="font-mono text-[9.5px] text-inkmuted">Registre &amp; Pilotage</div>
+            <div className="min-w-0">
+              <div className="text-[13px] font-extrabold tracking-tight text-ink">NOVACAB</div>
+              <div className="font-mono text-[8px] text-inkmuted leading-tight">TOUT VOTRE CABINET. UN SEUL PILOTE. ⭐</div>
             </div>
           )}
           {isMobile && (
@@ -2208,7 +2441,35 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
                 )}
                 {isOpen && (
                   <div className="flex flex-col gap-0.5">
-                    {g.items.map((it) => <NavButton key={it.id} it={it} indent={!isCollapsed} />)}
+                    {g.subgroups ? g.subgroups.map((sg) => {
+                      const subgroupOpen = isCollapsed || openGroups.has(`${g.id}:${sg.id}`) || sg.items.some((it) => it.id === view || (it.children || []).some((c) => c.id === view));
+                      const toggleSubgroup = () => setOpenGroups((prev) => {
+                        const next = new Set(prev);
+                        const key = `${g.id}:${sg.id}`;
+                        next.has(key) ? next.delete(key) : next.add(key);
+                        return next;
+                      });
+                      return (
+                        <div key={sg.id}>
+                          {!isCollapsed && (
+                            <button onClick={toggleSubgroup} className="flex items-center gap-1 w-full bg-transparent border-none px-6 pt-2 pb-1 text-[9px] font-bold tracking-wider uppercase text-inkmuted/80 hover:text-ink cursor-pointer">
+                              <span className="flex-1 text-left">{sg.label}</span><ChevronDown size={11} className={`transition-transform ${subgroupOpen ? "" : "-rotate-90"}`} />
+                            </button>
+                          )}
+                          {subgroupOpen && sg.items.filter(isAllowed).map((it) => (
+                            <React.Fragment key={it.id}>
+                              <NavButton it={it} indent={!isCollapsed} />
+                              {it.children && it.children.filter(isAllowed).map((child) => <NavButton key={child.id} it={child} indent={!isCollapsed} />)}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      );
+                    }) : g.items.filter(isAllowed).map((it) => (
+                      <React.Fragment key={it.id}>
+                        <NavButton it={it} indent={!isCollapsed} />
+                        {it.children && it.children.filter(isAllowed).map((child) => <NavButton key={child.id} it={child} indent={!isCollapsed} />)}
+                      </React.Fragment>
+                    ))}
                   </div>
                 )}
                 {isCollapsed && <div className="h-1.5" />}
@@ -2217,14 +2478,14 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
           })}
         </nav>
         <div className="mt-auto pt-3.5 border-t border-line flex flex-col gap-1.5">
-          <div title={mePortefeuille ? `Portefeuille : ${mePortefeuille.nom}` : "Aucun portefeuille"}
+          <div title={mePortefeuille ? `Cabinet : ${displayCabinetName(mePortefeuille.nom)}` : "Aucun cabinet"}
             className={`flex items-center gap-2 w-full bg-app border border-line rounded-[11px] text-ink ${isCollapsed ? "justify-center p-1.5" : "justify-start px-2 py-2"}`}>
             <span className="w-6 h-6 rounded-full flex items-center justify-center font-bold text-[11px] text-white shrink-0" style={{ background: meColor }}>{me?.[0]}</span>
             {!isCollapsed && (
               <div className="text-left overflow-hidden">
                 <div className="text-[11.5px] font-bold whitespace-nowrap overflow-hidden text-ellipsis">{me}</div>
                 <div className="text-[10px] text-inkmuted whitespace-nowrap overflow-hidden text-ellipsis">
-                  {ROLE_LABELS[meRole] || meRole}{mePortefeuille ? ` · ${mePortefeuille.nom}` : ""}
+                  {ROLE_LABELS[meRole] || meRole}{mePortefeuille ? ` · ${displayCabinetName(mePortefeuille.nom)}` : ""}
                 </div>
               </div>
             )}
@@ -2257,9 +2518,161 @@ function Sidebar({ view, setView, me, meRole, mePortefeuille, team, onLogout, co
 }
 
 /* ============================================================
+   MENU COMPTE — composant réutilisable pour tous les utilisateurs
+   ============================================================ */
+function AccountMenu({ me, meRole, cabinetName, open, onToggle, onSelect, onLogout }) {
+  const items = [
+    { id: "profile", label: "Mon profil", icon: UserRound, hint: "Informations personnelles" },
+    { id: "security", label: "Sécurité", icon: Lock, hint: "Mot de passe, 2FA, sessions" },
+    { id: "preferences", label: "Préférences", icon: Settings2, hint: "Interface, notifications, langue" },
+    { id: "notifications", label: "Notifications", icon: Bell, hint: "Gérer vos notifications" },
+    { id: "appearance", label: "Apparence", icon: Moon, hint: "Thème et affichage" },
+    { id: "sessions", label: "Sessions actives", icon: Laptop2, hint: "Voir et gérer vos sessions" },
+    { id: "help", label: "Aide & support", icon: CircleHelp, hint: "Centre d'aide, contact" },
+    { id: "about", label: "À propos", icon: Info, hint: "NOVACAB · Version 1.4.0" },
+  ];
+  const initials = (me || "U").split(/\s+/).map((x) => x[0]).join("").slice(0, 2).toUpperCase();
+  const role = ROLE_LABELS[meRole] || meRole || "Utilisateur";
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="group flex items-center gap-2 rounded-xl border border-line bg-card px-2 py-1.5 hover:border-accent hover:shadow-sm transition-all cursor-pointer"
+      >
+        <span className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-[11px] text-white shrink-0" style={{ background: T.navy }}>{initials}</span>
+        <span className="hidden lg:block text-left min-w-0 max-w-[145px]">
+          <span className="block text-[11.5px] font-bold text-ink truncate">{me || "Utilisateur"}</span>
+          <span className="block text-[9.5px] text-inkmuted truncate">{role} · {cabinetName || "NOVACAB"}</span>
+        </span>
+        <ChevronDown size={14} className={`text-inkmuted transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0, y: -5, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: .16 }}
+          role="menu"
+          className="absolute right-0 top-[calc(100%+8px)] z-[80] w-[300px] overflow-hidden rounded-2xl border border-line bg-card shadow-2xl"
+        >
+          <div className="p-4 border-b border-line bg-app">
+            <div className="flex items-center gap-3">
+              <span className="w-11 h-11 rounded-full flex items-center justify-center font-extrabold text-white" style={{ background: T.navy }}>{initials}</span>
+              <div className="min-w-0">
+                <div className="text-sm font-extrabold text-ink truncate">{me || "Utilisateur"}</div>
+                <div className="text-[11px] text-inkmuted">{role} · {cabinetName || "NOVACAB"}</div>
+                <div className="inline-flex items-center gap-1.5 mt-1.5 text-[10px] font-semibold text-green-600 bg-green-50 border border-green-100 rounded-full px-2 py-0.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500" /> En ligne</div>
+              </div>
+            </div>
+          </div>
+          <div className="p-2">
+            {items.map((item) => {
+              const Icon = item.icon;
+              return <button key={item.id} role="menuitem" type="button" onClick={() => onSelect(item.id)} className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-app transition-colors cursor-pointer">
+                <span className="w-8 h-8 rounded-lg border border-line bg-app flex items-center justify-center text-inkmuted shrink-0"><Icon size={15} /></span>
+                <span className="min-w-0"><span className="block text-[11.5px] font-bold text-ink">{item.label}</span><span className="block text-[9.5px] text-inkmuted mt-0.5">{item.hint}</span></span>
+              </button>;
+            })}
+          </div>
+          <div className="border-t border-line p-2">
+            <button type="button" onClick={onLogout} className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-red-600 hover:bg-red-50 transition-colors cursor-pointer">
+              <span className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center"><LogOut size={15} /></span>
+              <span className="text-[11.5px] font-bold">Déconnexion</span>
+            </button>
+          </div>
+        </motion.div>
+      )}
+    </div>
+  );
+}
+
+function AccountPage({ section, myRow, myPortefeuille, session, me, meRole, cabinetName, onUpdateMember, onLogout, onSectionChange }) {
+  const [profile, setProfile] = useState(() => {
+    const full = session?.user?.user_metadata?.full_name || me || "";
+    const parts = String(full).trim().split(/\s+/);
+    return { firstName: parts.shift() || "", lastName: parts.join(" ") || "", telephone: myRow?.telephone || "" };
+  });
+  const [notice, setNotice] = useState("");
+  const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
+  const [passwordNotice, setPasswordNotice] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem("novacab-theme");
+    return ["light", "dark", "system"].includes(saved) ? saved : "light";
+  });
+  const [density, setDensity] = useState(() => localStorage.getItem("novacab-density") || "normal");
+  const [lang, setLang] = useState(() => localStorage.getItem("novacab-language") || "fr");
+  const [notifPrefs, setNotifPrefs] = useState(() => { try { return JSON.parse(localStorage.getItem("novacab-notif-prefs") || '{"email":true,"app":true,"tasks":true,"relances":true}'); } catch { return { email:true, app:true, tasks:true, relances:true }; } });
+  useEffect(() => {
+    const apply = (value) => document.documentElement.classList.toggle("dark", value === "dark");
+    if (theme === "system") {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      apply(mq.matches ? "dark" : "light");
+      const onChange = (e) => apply(e.matches ? "dark" : "light");
+      mq.addEventListener?.("change", onChange);
+      return () => mq.removeEventListener?.("change", onChange);
+    }
+    apply(theme);
+  }, [theme]);
+
+  const saveProfile = async () => {
+    const firstName = profile.firstName.trim(); const lastName = profile.lastName.trim();
+    const fullName = [firstName, lastName].filter(Boolean).join(" ");
+    const { error } = await supabase.auth.updateUser({ data: { full_name: fullName, first_name: firstName, last_name: lastName } });
+    if (error) { setNotice(`Impossible d'enregistrer : ${error.message}`); return; }
+    if (myRow?.id) onUpdateMember(myRow.id, { telephone: profile.telephone.trim() });
+    setNotice("Vos informations personnelles ont été enregistrées.");
+    setTimeout(() => setNotice(""), 2200);
+  };
+  const updatePassword = async (e) => {
+    e.preventDefault(); setPasswordNotice("");
+    if (passwords.next.length < 8) { setPasswordNotice("Le nouveau mot de passe doit contenir au moins 8 caractères."); return; }
+    if (passwords.next !== passwords.confirm) { setPasswordNotice("Les deux nouveaux mots de passe ne correspondent pas."); return; }
+    setSavingPassword(true);
+    if (!passwords.current) { setSavingPassword(false); setPasswordNotice("Saisissez votre mot de passe actuel."); return; }
+    const { error: verifyError } = await supabase.auth.signInWithPassword({ email: session?.user?.email || "", password: passwords.current });
+    if (verifyError) { setSavingPassword(false); setPasswordNotice("Le mot de passe actuel est incorrect."); return; }
+    const { error } = await supabase.auth.updateUser({ password: passwords.next });
+    setSavingPassword(false);
+    if (error) { setPasswordNotice(error.message || "Impossible de mettre à jour le mot de passe."); return; }
+    setPasswords({ current: "", next: "", confirm: "" }); setPasswordNotice("Mot de passe mis à jour avec succès.");
+  };
+  const savePref = (key, value) => {
+    if (key === "theme") { setTheme(value); localStorage.setItem("novacab-theme", value); }
+    if (key === "density") { setDensity(value); localStorage.setItem("novacab-density", value); }
+    if (key === "lang") { setLang(value); localStorage.setItem("novacab-language", value); }
+    if (key === "notif") { setNotifPrefs(value); localStorage.setItem("novacab-notif-prefs", JSON.stringify(value)); }
+  };
+  const initials = (me || "U").split(/\s+/).map((x) => x[0]).join("").slice(0,2).toUpperCase();
+  const role = ROLE_LABELS[meRole] || meRole || "Utilisateur";
+  const sections = [
+    ["profile", "Mon profil", UserRound], ["security", "Sécurité", Lock], ["preferences", "Préférences", Settings2], ["notifications", "Notifications", Bell], ["appearance", "Apparence", Moon], ["sessions", "Sessions actives", Laptop2], ["help", "Aide & support", CircleHelp], ["about", "À propos", Info],
+  ];
+  const renderContent = () => {
+    if (section === "profile") return <AccountProfileContent profile={profile} setProfile={setProfile} myRow={myRow} myPortefeuille={myPortefeuille} role={role} notice={notice} onSave={saveProfile} />;
+    if (section === "security") return <div className="space-y-3"><Panel title="Changer mon mot de passe"><form onSubmit={updatePassword} className="grid gap-3 max-w-xl"><input type="password" value={passwords.current} onChange={e=>setPasswords({...passwords,current:e.target.value})} placeholder="Mot de passe actuel" className="input-field" autoComplete="current-password"/><input required minLength={8} type="password" value={passwords.next} onChange={e=>setPasswords({...passwords,next:e.target.value})} placeholder="Nouveau mot de passe" className="input-field" autoComplete="new-password"/><input required minLength={8} type="password" value={passwords.confirm} onChange={e=>setPasswords({...passwords,confirm:e.target.value})} placeholder="Confirmation" className="input-field"/><PasswordStrength value={passwords.next}/>{passwordNotice && <div className={`text-xs rounded-lg p-2.5 ${passwordNotice.includes("succès") ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{passwordNotice}</div>}<button className="btn-primary w-fit" disabled={savingPassword}>{savingPassword && <Loader2 size={14} className="spin"/>} Mettre à jour le mot de passe</button></form></Panel><Panel title="Authentification à deux facteurs"><div className="flex items-center justify-between gap-4"><div><div className="text-sm font-bold text-ink">Renforcer la sécurité du compte</div><div className="text-xs text-inkmuted mt-1">La 2FA peut être activée avec votre fournisseur d'identité lorsque la fonctionnalité est configurée.</div></div><Stamped tone="neutral" small>À configurer</Stamped></div></Panel><Panel title="Sessions actives"><div className="flex items-center justify-between"><div><div className="text-sm font-bold text-ink">Appareils connectés</div><div className="text-xs text-inkmuted mt-1">Gérez vos sessions et déconnectez les autres appareils.</div></div><button className="btn-secondary" onClick={()=>onSectionChange("sessions")}>Voir les sessions</button></div></Panel></div>;
+    if (section === "preferences") return <Panel title="Préférences générales"><div className="grid md:grid-cols-2 gap-3"><PreferenceSelect label="Langue" value={lang} onChange={v=>savePref("lang",v)} options={[["fr","Français"],["en","English"]]}/><PreferenceSelect label="Thème" value={theme} onChange={v=>savePref("theme",v)} options={[["system","Système"],["light","Clair"],["dark","Sombre"]]}/><PreferenceSelect label="Densité d'affichage" value={density} onChange={v=>savePref("density",v)} options={[["compact","Compact"],["normal","Normal"],["confort","Confort"]]}/><PreferenceSelect label="Page d'accueil par défaut" value="dashboard" onChange={()=>{}} options={[["dashboard","Tableau de bord"]]}/></div></Panel>;
+    if (section === "notifications") return <Panel title="Préférences de notifications"><div className="grid gap-1">{[["email","Recevoir les notifications par e-mail"],["app","Recevoir les notifications in-app"],["tasks","Notifications des tâches"],["relances","Notifications des relances"]].map(([k,l])=><label key={k} className="flex items-center justify-between gap-3 py-2.5 border-b border-line last:border-0 cursor-pointer"><span className="text-xs text-inksoft">{l}</span><input type="checkbox" checked={!!notifPrefs[k]} onChange={e=>savePref("notif",{...notifPrefs,[k]:e.target.checked})} className="accent-blue-600 w-4 h-4"/></label>)}</div></Panel>;
+    if (section === "appearance") return <Panel title="Apparence"><div className="grid md:grid-cols-3 gap-3">{[["system","Système"],["light","Clair"],["dark","Sombre"]].map(([v,l])=><button key={v} onClick={()=>savePref("theme",v)} className={`rounded-xl border p-4 text-left ${theme===v?"border-accent bg-accent-soft":"border-line bg-card"}`}><div className="text-sm font-bold text-ink">{l}</div><div className="text-[10px] text-inkmuted mt-1">Utiliser le thème {l.toLowerCase()}.</div></button>)}</div></Panel>;
+    if (section === "sessions") return <Panel title="Sessions actives"><div className="rounded-xl border border-line p-3 flex items-center gap-3"><div className="w-9 h-9 rounded-lg bg-accent-soft text-accent flex items-center justify-center"><Laptop2 size={17}/></div><div className="flex-1"><div className="text-xs font-bold text-ink">Session actuelle</div><div className="text-[10px] text-inkmuted mt-0.5">{session?.user?.email || "Compte connecté"} · navigateur actuel</div></div><Stamped tone="green" small>Active</Stamped></div><button className="btn-secondary mt-3" onClick={onLogout}><LogOut size={14}/> Se déconnecter</button></Panel>;
+    if (section === "help") return <Panel title="Aide & support"><div className="text-sm font-bold text-ink">Centre d'aide NOVACAB</div><p className="text-xs text-inkmuted leading-relaxed">Pour toute question sur votre compte, vos accès ou votre cabinet, contactez l'administrateur de votre espace NOVACAB.</p></Panel>;
+    return <Panel title="À propos"><div className="text-lg font-extrabold text-ink">NOVACAB</div><div className="text-xs text-inkmuted mt-1">TOUT VOTRE CABINET. UN SEUL PILOTE.</div><div className="text-xs text-inkmuted mt-4">Version 1.4.0</div></Panel>;
+  };
+  return <div className="max-w-6xl mx-auto"><Reveal><div className="flex flex-wrap items-start justify-between gap-4 mb-5"><div><div className="text-[10px] uppercase tracking-wider font-bold text-accent">Compte utilisateur</div><h1 className="text-xl font-extrabold text-ink mt-1">{section === "profile" ? "Mon profil" : sections.find(s=>s[0]===section)?.[1] || "Compte"}</h1><p className="text-xs text-inkmuted mt-1">Gérez votre compte NOVACAB · {cabinetName || "NOVACAB"}</p></div><div className="flex items-center gap-2 rounded-xl border border-line bg-card px-3 py-2"><span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-[10px]" style={{background:T.navy}}>{initials}</span><div><div className="text-xs font-bold text-ink">{me}</div><div className="text-[10px] text-inkmuted">{role} · <strong>{cabinetName}</strong></div></div></div></div></Reveal><div className="grid lg:grid-cols-[220px_1fr] gap-4 items-start"><div className="card p-2">{sections.map(([id,label,Icon])=><button key={id} onClick={()=>onSectionChange(id)} className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-xs font-semibold ${section===id?"bg-accent-soft text-accent":"text-inksoft hover:bg-app"}`}><Icon size={14}/>{label}</button>)}</div><div>{renderContent()}</div></div></div>;
+}
+
+function AccountProfileContent({ profile, setProfile, myRow, myPortefeuille, role, notice, onSave }) {
+  const field = (label, value, onChange, locked=false, type="text") => <label className="block"><span className="block text-[10px] font-semibold text-inkmuted mb-1.5">{label}</span><input type={type} value={value} onChange={onChange} disabled={locked} className={`input-field ${locked?"opacity-70 cursor-not-allowed":""}`}/></label>;
+  return <Panel title="Informations personnelles"><div className="flex items-center gap-4 pb-4 mb-4 border-b border-line"><div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white text-xl font-extrabold" style={{background:T.navy}}>{(profile.firstName||"U")[0]}{(profile.lastName||"")[0]||""}</div><div><div className="text-sm font-extrabold text-ink">{[profile.firstName,profile.lastName].filter(Boolean).join(" ")}</div><div className="text-xs text-inkmuted mt-1">{role} · {displayCabinetName(myPortefeuille?.nom || myRow?.cabinet_nom)}</div></div></div><div className="grid md:grid-cols-2 gap-3">{field("Prénom",profile.firstName,e=>setProfile({...profile,firstName:e.target.value}))}{field("Nom",profile.lastName,e=>setProfile({...profile,lastName:e.target.value}))}{field("Adresse e-mail",myRow?.email || "",()=>{},true,"email")}{field("Téléphone",profile.telephone,e=>setProfile({...profile,telephone:e.target.value}),false,"tel")}{field("Rôle",role,()=>{},true)}{field("Cabinet",displayCabinetName(myRow?.cabinet_nom || myPortefeuille?.nom),()=>{},true)}{field("Portefeuille",displayCabinetName(myPortefeuille?.nom),()=>{},true)}{field("Fuseau horaire","(GMT+01:00) Paris, Bruxelles",()=>{},true)}</div><div className="flex items-center justify-between gap-3 mt-4 pt-4 border-t border-line"><div className="text-xs text-green-700">{notice}</div><button className="btn-primary" onClick={onSave}><Check size={14}/> Enregistrer les modifications</button></div></Panel>;
+}
+function PasswordStrength({ value }) { const n = value.length; const label = n >= 12 ? "Mot de passe très fort" : n >= 8 ? "Mot de passe fort" : n >= 5 ? "Mot de passe moyen" : "Mot de passe faible"; return <div><div className="h-1.5 rounded-full bg-app overflow-hidden"><div className="h-full rounded-full bg-accent transition-all" style={{width:`${Math.min(100,n*8.5)}%`}}/></div><div className="text-[10px] text-inkmuted mt-1">{label}</div></div>; }
+function PreferenceSelect({ label, value, onChange, options }) { return <label className="block"><span className="block text-[10px] font-semibold text-inkmuted mb-1.5">{label}</span><select value={value} onChange={e=>onChange(e.target.value)} className="input-field">{options.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>; }
+
+/* ============================================================
    TOP BAR
    ============================================================ */
-function TopBar({ search, setSearch, saveStatus, me, meColor, openTabs, activeTab, onHome, onBack, canGoBack, onSelectTab, onCloseTab, onNav, onOpenClient, onNewClient, clients, notifCount, onOpenMobileMenu, notifications, onMarkNotificationRead, onOpenClient2 }) {
+function TopBar({ search, setSearch, saveStatus, me, meRole, meColor, cabinetName, openTabs, activeTab, onHome, onBack, canGoBack, onSelectTab, onCloseTab, onNav, onOpenClient, onNewClient, clients, notifCount, onOpenMobileMenu, notifications, onMarkNotificationRead, onOpenClient2, accountMenuOpen, setAccountMenuOpen, onOpenAccount, onLogout }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
@@ -2332,10 +2745,19 @@ const list = q ? clients.filter((c) => c.nom.toLowerCase().includes(q) || String
             <ArrowLeft size={16} strokeWidth={2} />
           </button>
         )}
-        <button className="topTab" onClick={onHome} title="Accueil" style={{
-          background: !activeTab ? T.paperDeep : "transparent", color: !activeTab ? T.navy : T.inkMuted, border: "none", marginRight: 2,
-        }}>
-          <Home size={15} strokeWidth={2.2} />
+        <button
+          type="button"
+          onClick={onHome}
+          title={`Retour à la vue d'ensemble — ${cabinetName || "NOVACAB"}`}
+          className="flex items-center gap-2.5 ml-1 px-3 py-1.5 rounded-xl border border-line bg-card hover:border-accent hover:bg-accent-soft transition-all cursor-pointer min-w-[185px] max-w-[260px] text-left"
+        >
+          <span className="w-7 h-7 rounded-lg bg-accent-soft border border-line flex items-center justify-center shrink-0">
+            <Building2 size={15} className="text-accent" strokeWidth={2.1} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[8.5px] uppercase tracking-wider text-inkmuted font-semibold">Cabinet</span>
+            <span className="block text-[12px] font-extrabold text-ink truncate">{cabinetName || "NOVACAB"}</span>
+          </span>
         </button>
         <div className="scrollbar" style={{ display: "flex", alignItems: "center", overflowX: "auto", gap: 2, maxWidth: "44vw" }}>
           {openTabs.map((t) => (
@@ -2387,14 +2809,14 @@ const list = q ? clients.filter((c) => c.nom.toLowerCase().includes(q) || String
                 onBlur={() => !search && setSearchOpen(false)}
                 placeholder="Rechercher un dossier, un SIREN…"
                 className="input-field !rounded-full !py-1.5 !pl-8 !pr-16 !bg-app text-xs w-full" />
-              <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[9.5px] font-mono text-inkmuted bg-white border border-line rounded px-1.5 py-0.5">Échap</kbd>
+              <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[9.5px] font-mono text-inkmuted bg-card border border-line rounded px-1.5 py-0.5">Échap</kbd>
             </div>
           ) : (
             <button onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 0); }} title="Rechercher (⌘K)"
               className="hidden sm:flex items-center gap-2 rounded-full border border-line bg-app px-3 py-1.5 text-xs text-inkmuted hover:border-accent hover:text-accent transition-colors mr-1">
               <Search size={13} />
               <span className="hidden lg:inline">Rechercher…</span>
-              <kbd className="font-mono text-[9.5px] bg-white border border-line rounded px-1.5 py-0.5 ml-1">⌘K</kbd>
+              <kbd className="font-mono text-[9.5px] bg-card border border-line rounded px-1.5 py-0.5 ml-1">⌘K</kbd>
             </button>
           )}
           <button className="sm:hidden topIconBtn" title="Rechercher" onClick={() => setSearchOpen((s) => !s)}><Search size={16} strokeWidth={1.9} /></button>
@@ -2439,7 +2861,7 @@ const list = q ? clients.filter((c) => c.nom.toLowerCase().includes(q) || String
               </button>
             );
           })}
-          <span className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-[11px] text-white ml-1.5 shrink-0" style={{ background: meColor }}>{me?.[0]}</span>
+          <div className="ml-1.5 shrink-0"><AccountMenu me={me} meRole={meRole} cabinetName={cabinetName} open={accountMenuOpen} onToggle={() => setAccountMenuOpen((v) => !v)} onSelect={onOpenAccount} onLogout={onLogout} /></div>
         </div>
       </div>
       <style>{`.spin{animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -3040,6 +3462,31 @@ function ValidationDossierTab({ client, onUpdate, me }) {
   </div>;
 }
 
+function inferCategorieFiscale(client) {
+  const explicit = String(client?.categorieFiscale || client?.categorieFiscaleBICBNC || client?.categorieImposition || "").trim().toUpperCase();
+  if (explicit) {
+    if (explicit.includes("BNC")) return "BNC";
+    if (explicit.includes("BIC")) return "BIC";
+    if (explicit.includes("BA")) return "BA";
+    if (explicit.includes("EI")) return "EI";
+    if (explicit.includes("IS")) return "IS";
+  }
+  const forme = String(inferLegalForm(client) || client?.formeJuridique || "").toUpperCase();
+  const activite = normalizeText(client?.activite || "");
+  if (forme === "EI" || forme === "EIRL") {
+    const liberal = ["medecin","avocat","architecte","consultant","conseil","infirmier","kinesitherapeute","psychologue","expert comptable","formation","profession liberale"];
+    if (liberal.some(k => activite.includes(normalizeText(k)))) return "BNC";
+    return "EI";
+  }
+  if (["SCI","SELARL","SELAS"].includes(forme) && (client?.regimeFiscal || "").toUpperCase() === "IR") return "IR";
+  if ((client?.regimeFiscal || "").toUpperCase() === "IS") return "IS";
+  const liberal = ["medecin","avocat","architecte","consultant","conseil","infirmier","kinesitherapeute","psychologue","expert comptable","formation","profession liberale"];
+  if (liberal.some(k => activite.includes(normalizeText(k)))) return "BNC";
+  const agricole = ["agriculture","exploitation agricole","elevage","culture"];
+  if (agricole.some(k => activite.includes(normalizeText(k)))) return "BA";
+  return "BIC";
+}
+
 function Dashboard({
   myClients,
   tasks,
@@ -3116,6 +3563,11 @@ const legalItems = useMemo(
       inferLegalForm,
       (key) => key
     ),
+  [myClients]
+);
+
+const fiscalCategoryItems = useMemo(
+  () => buildDistribution(myClients, inferCategorieFiscale, (key) => key),
   [myClients]
 );
 
@@ -3351,6 +3803,14 @@ const collaboratorItems = useMemo(
         total={myClients.length}
         icon={Landmark}
         onItemClick={(item) => onDashboardFilter?.({ type: "formeJuridique", value: item.key, label: item.label })}
+      />
+
+      <DonutDistribution
+        title="Par catégorie fiscale"
+        items={fiscalCategoryItems}
+        total={myClients.length}
+        icon={Scale}
+        onItemClick={(item) => onDashboardFilter?.({ type: "categorieFiscale", value: item.key, label: item.label })}
       />
 
       <DonutDistribution
@@ -3806,6 +4266,8 @@ function ClientsRegistry({
           return (c.secteur || classifyActivite(c.activite)) === value;
         case "formeJuridique":
           return inferLegalForm(c) === value;
+        case "categorieFiscale":
+          return inferCategorieFiscale(c) === value;
         case "statut":
           return (c.statutDossier || "actif") === value;
         case "tva": {
@@ -4031,7 +4493,7 @@ function ClientsRegistry({
   <button
     title="Ouvrir"
     onClick={() => setSelected(c.id)}
-    className="w-7 h-7 rounded-lg border border-line bg-white text-inkmuted hover:text-accent hover:border-accent inline-flex items-center justify-center"
+    className="w-7 h-7 rounded-lg border border-line bg-card text-inkmuted hover:text-accent hover:border-accent inline-flex items-center justify-center"
   >
     <Eye size={13} />
   </button>
@@ -4089,6 +4551,7 @@ function ClientEditorPage({
   client,
   team,
   me,
+  meRole,
   meId,
   portefeuilleId,
   onUpdate,
@@ -4114,15 +4577,27 @@ function ClientEditorPage({
   };
   if (!client) return null;
   const tabs = [
-     { id: "mission", label: "Accueil client" }, { id: "infos", label: "Infos générales" }, { id: "contact", label: "Fiche contact" }, { id: "corporate", label: "Corporate" }, { id: "tva", label: "TVA" },
-    { id: "bilan", label: "Bilan" }, { id: "acomptes", label: "Acomptes" }, { id: "age", label: "AGE / AGO" },
-    { id: "formeJuridique", label: "Forme juridique" },{ id: "revision", label: "Révision" },
-    { id: "acces", label: "Accès & codes" },
-    { id: "suivi", label: "Demandes & pièces" },
-    { id: "rentabilite", label: "Temps & rentabilité" },
-    { id: "validation", label: "Validation" },
-    { id: "notes", label: "Notes" }, { id: "historique", label: "Historique" },
+    { id: "mission", label: "Accueil client" },
+    { id: "infos", label: "Infos générales" }, { id: "contact", label: "Fiche contact" }, { id: "corporate", label: "Corporate" },
+    { id: "tva", label: "TVA" }, { id: "bilan", label: "Bilan" }, { id: "acomptes", label: "Acomptes" },
+    { id: "age", label: "AGE / AGO" }, { id: "formeJuridique", label: "Forme juridique" }, { id: "revision", label: "Révision" },
+    { id: "acces", label: "Accès & codes" }, { id: "accesSociaux", label: "Accès organismes sociaux" },
+    { id: "social", label: "Suivi social" }, { id: "suivi", label: "Demandes & pièces" }, { id: "rentabilite", label: "Temps & rentabilité" },
+    { id: "validation", label: "Validation" }, { id: "notes", label: "Notes" }, { id: "historique", label: "Historique" },
   ];
+  const navGroups = [
+    { id: "home", label: "Accueil", items: ["mission"] },
+    { id: "infos", label: "Informations", items: ["infos", "contact", "corporate"] },
+    { id: "compta", label: "Comptabilité", items: ["revision", "bilan","rentabilite"] },
+    { id: "fiscal", label: "Fiscalité", items: ["tva", "acomptes" ]}, 
+    { id: "juridique", label: "Juridique", items: ["formeJuridique", "age"] },
+    { id: "social", label: "Social", items: ["social", "accesSociaux"] },
+    { id: "acces", label: "Accès & codes", items: ["acces"] },
+    { id: "more", label: "Plus", items: ["validation", "notes", "historique"] },
+  ];
+  const tabLabel = (id) => tabs.find((t) => t.id === id)?.label || id;
+  const [openClientNav, setOpenClientNav] = useState(null);
+  const activeNavGroup = navGroups.find((g) => g.items.includes(tab));
   return (
     <div>
       <Reveal>
@@ -4216,13 +4691,43 @@ function ClientEditorPage({
           </div>
         </div>
       </Reveal>
-      <div style={{ display: "flex", gap: 2, borderBottom: `1px solid ${T.line}`, marginTop: 16, marginBottom: 22, overflowX: "auto" }} className="scrollbar">
-        {tabs.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
-            padding: "10px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap",
-            color: tab === t.id ? T.navy : T.inkMuted, borderBottom: tab === t.id ? `2.5px solid ${T.navy}` : "2.5px solid transparent", marginBottom: -1,
-          }}>{t.label}</button>
-        ))}
+      <div style={{ marginTop: 16, marginBottom: 22, borderBottom: `1px solid ${T.line}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, overflowX: "auto", paddingBottom: 0 }} className="scrollbar">
+          {navGroups.map((g) => {
+            const active = activeNavGroup?.id === g.id;
+            const hasMenu = g.items.length > 1;
+            return <div key={g.id} style={{ position: "relative", flexShrink: 0, display: "flex", alignItems: "stretch" }}>
+              <button
+                type="button"
+                onClick={() => { setTab(g.items[0]); setOpenClientNav(null); }}
+                title={`Ouvrir ${g.label}`}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5, padding: "10px 10px 10px 13px", background: active ? T.navySoft : "transparent", border: "none", borderBottom: active ? `2.5px solid ${T.navy}` : "2.5px solid transparent", cursor: "pointer", fontSize: 12.5, fontWeight: active ? 700 : 600, whiteSpace: "nowrap", color: active ? T.navy : T.inkMuted, marginBottom: -1, borderRadius: "8px 0 0 0"
+                }}
+              >{g.label}</button>
+              {hasMenu && (
+                <button
+                  type="button"
+                  aria-label={`Afficher les sous-rubriques de ${g.label}`}
+                  aria-expanded={openClientNav === g.id}
+                  onClick={(e) => { e.stopPropagation(); setOpenClientNav(openClientNav === g.id ? null : g.id); }}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", padding: "10px 8px", background: active ? T.navySoft : "transparent", border: "none", borderBottom: active ? `2.5px solid ${T.navy}` : "2.5px solid transparent", cursor: "pointer", color: active ? T.navy : T.inkMuted, marginBottom: -1, borderRadius: "0 8px 0 0"
+                  }}
+                >
+                  <ChevronDown size={12} style={{ transform: openClientNav === g.id ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+                </button>
+              )}
+              {openClientNav === g.id && hasMenu && <div className="client-nav-menu" style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40, minWidth: 190, padding: 6, background: T.card, border: `1px solid ${T.line}`, borderRadius: 12, boxShadow: T.shadowLg }}>
+                {g.items.map((id) => <button key={id} type="button" onClick={() => { setTab(id); setOpenClientNav(null); }} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 9px", border: "none", borderRadius: 8, background: tab === id ? T.navySoft : "transparent", color: tab === id ? T.navy : T.inkSoft, cursor: "pointer", textAlign: "left", fontSize: 11.5, fontWeight: tab === id ? 700 : 600 }}>{tabLabel(id)}{tab === id && <Check size={13} />}</button>)}
+              </div>}
+            </div>;
+          })}
+        </div>
+        {activeNavGroup && activeNavGroup.items.length > 1 && <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 2px 8px", color: T.inkMuted, fontSize: 10.5, overflowX: "auto" }} className="scrollbar">
+          <span style={{ fontWeight: 700, color: T.inkSoft }}>{activeNavGroup.label} :</span>
+          {activeNavGroup.items.map((id) => <button key={id} onClick={() => setTab(id)} style={{ border: `1px solid ${tab === id ? T.navy : T.line}`, background: tab === id ? T.navySoft : T.card, color: tab === id ? T.navy : T.inkMuted, borderRadius: 999, padding: "4px 9px", fontSize: 10.5, fontWeight: 600, whiteSpace: "nowrap", cursor: "pointer" }}>{tabLabel(id)}</button>)}
+        </div>}
       </div>
       <div style={{ maxWidth: 720, background: T.card, border: `1px solid ${T.line}`, borderRadius: T.radius, padding: "22px 24px", boxShadow: T.shadowSm }}>
         {tab === "infos" && <InfosTab client={draft} team={team} onUpdate={patchDraft} setView={setView} />}
@@ -4235,7 +4740,9 @@ function ClientEditorPage({
         {tab === "formeJuridique" && <FormeJuridiqueEditor client={draft} onUpdate={patchDraft} />}
 {tab === "revision" && <RevisionTab client={draft} onUpdate={patchDraft} setView={setView} />}
         {tab === "mission" && <MissionTab client={draft} onUpdate={patchDraft} />}
-        {tab === "acces" && <AccesTab client={draft} onUpdate={patchDraft} />}
+        {tab === "acces" && <AccesTab client={draft} onUpdate={patchDraft} canEdit={canEditOrganismesSociaux(meRole)} />}
+        {tab === "accesSociaux" && <AccesOrganismesSociauxTab client={draft} portefeuilleId={portefeuilleId} meId={meId} canEdit={canEditOrganismesSociaux(meRole)} />}
+        {tab === "social" && <SocialTab client={draft} onUpdate={patchDraft} />}
         {tab === "suivi" && <DemandesPiecesTab client={draft} onUpdate={patchDraft} />}
         {tab === "rentabilite" && <RentabiliteTab client={draft} onUpdate={patchDraft} />}
         {tab === "validation" && <ValidationDossierTab client={draft} onUpdate={patchDraft} me={me} />}
@@ -4252,15 +4759,17 @@ function ClientEditorPage({
    chaque entrée : { id, libelle, identifiant, motDePasse, note }
    ============================================================ */
 const ACCES_CATEGORIES = [
-  { key: "banques", label: "Banque(s)", icon: Landmark, placeholder: "ex. BNP Paribas — compte courant" },
-  { key: "comptesFournisseurs", label: "Comptes fournisseurs", icon: Briefcase, placeholder: "ex. Portail EDF Pro" },
-  { key: "caisse", label: "Caisse / plateforme de facturation", icon: Wallet, placeholder: "ex. Logiciel de caisse Zettle" },
-  { key: "netEntreprise", label: "Net-entreprise", icon: ShieldCheck, placeholder: "ex. Net-entreprise.fr" },
-  { key: "autres", label: "Autres accès", icon: KeyRound, placeholder: "ex. Portail impots.gouv.fr" },
+  { key: "banques", label: "Banques", icon: Landmark, placeholder: "ex. BNP Paribas — compte courant" },
+  { key: "comptesFournisseurs", label: "Fournisseurs & plateformes", icon: Briefcase, placeholder: "ex. Portail EDF Pro" },
+  { key: "caisse", label: "Caisses & encaissement", icon: Wallet, placeholder: "ex. Logiciel de caisse Zettle" },
+  { key: "netEntreprise", label: "Organismes sociaux", icon: ShieldCheck, placeholder: "ex. URSSAF / Net-entreprises / SYLAE" },
+  { key: "administrations", label: "Administrations", icon: Building2, placeholder: "ex. impots.gouv.fr / douane" },
+  { key: "logiciels", label: "Logiciels & plateformes", icon: Laptop2, placeholder: "ex. logiciel métier / portail" },
+  { key: "autres", label: "Autres accès", icon: KeyRound, placeholder: "Autre accès du dossier" },
 ];
 function uid() { return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 
-function AccesPasswordField({ value, onCommit }) {
+function AccesPasswordField({ value, onCommit, disabled = false }) {
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -4273,13 +4782,14 @@ function AccesPasswordField({ value, onCommit }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
       <input
+        disabled={disabled}
         type={visible ? "text" : "password"}
         defaultValue={value}
         onBlur={(e) => onCommit(e.target.value)}
         placeholder="Mot de passe"
         style={{ fontFamily: T.mono, fontSize: 12, padding: "5px 8px", borderRadius: 8, border: `1px solid ${T.line}`, width: 140, background: T.card }}
       />
-      <button type="button" onClick={() => setVisible((v) => !v)} title={visible ? "Masquer" : "Afficher"}
+      <button type="button" disabled={disabled} onClick={() => setVisible((v) => !v)} title={visible ? "Masquer" : "Afficher"}
         style={{ background: "none", border: `1px solid ${T.line}`, borderRadius: 7, padding: 5, cursor: "pointer", color: T.inkMuted, display: "flex" }}>
         {visible ? <EyeOff size={13} /> : <Eye size={13} />}
       </button>
@@ -4292,30 +4802,30 @@ function AccesPasswordField({ value, onCommit }) {
   );
 }
 
-function AccesEntryRow({ entry, onChange, onRemove }) {
+function AccesEntryRow({ entry, onChange, onRemove, disabled = false }) {
   const patch = (f) => onChange({ ...entry, ...f });
   return (
     <div style={{ border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 12px", marginBottom: 8, background: T.paper }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        <input defaultValue={entry.libelle} placeholder="Libellé (ex. BNP Paribas — compte courant)" onBlur={(e) => patch({ libelle: e.target.value })}
+        <input disabled={disabled} defaultValue={entry.libelle} placeholder="Libellé (ex. BNP Paribas — compte courant)" onBlur={(e) => patch({ libelle: e.target.value })}
           style={{ flex: "1 1 200px", fontSize: 12.5, fontWeight: 600, padding: "6px 9px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card }} />
-        <button type="button" onClick={onRemove} title="Supprimer cet accès"
+        <button type="button" disabled={disabled} onClick={onRemove} title="Supprimer cet accès"
           style={{ background: "none", border: "none", cursor: "pointer", color: T.inkMuted, display: "flex", flexShrink: 0 }}>
           <Trash2 size={14} />
         </button>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <input defaultValue={entry.identifiant} placeholder="Identifiant" onBlur={(e) => patch({ identifiant: e.target.value })}
+        <input disabled={disabled} defaultValue={entry.identifiant} placeholder="Identifiant" onBlur={(e) => patch({ identifiant: e.target.value })}
           style={{ fontSize: 12, padding: "5px 8px", borderRadius: 8, border: `1px solid ${T.line}`, width: 150, background: T.card }} />
-        <AccesPasswordField value={entry.motDePasse} onCommit={(v) => patch({ motDePasse: v })} />
+        <AccesPasswordField value={entry.motDePasse} onCommit={(v) => patch({ motDePasse: v })} disabled={disabled} />
       </div>
-      <textarea defaultValue={entry.note} placeholder="Note libre (URL, RIB, digicode…)" onBlur={(e) => patch({ note: e.target.value })}
+      <textarea disabled={disabled} defaultValue={entry.note} placeholder="Note libre (URL, RIB, digicode…)" onBlur={(e) => patch({ note: e.target.value })}
         rows={2} style={{ width: "100%", marginTop: 8, fontSize: 12, padding: "6px 9px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card, resize: "vertical", fontFamily: T.sans }} />
     </div>
   );
 }
 
-function AccesCategoryPanel({ category, entries, onUpdate }) {
+function AccesCategoryPanel({ category, entries, onUpdate, canEdit = true }) {
   const Icon = category.icon;
   const list = entries || [];
   const setList = (next) => onUpdate(next);
@@ -4328,17 +4838,308 @@ function AccesCategoryPanel({ category, entries, onUpdate }) {
   return (
     <Panel title={`${category.label} (${list.length})`}>
       {list.length === 0 && <EmptyNote text="Aucun accès enregistré dans cette catégorie." />}
-      {list.map((e) => <AccesEntryRow key={e.id} entry={e} onChange={(next) => updateEntry(e.id, next)} onRemove={() => removeEntry(e.id)} />)}
-      <button type="button" onClick={addEntry} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, background: "none", border: `1px dashed ${T.line}`, borderRadius: 9, padding: "7px 12px", fontSize: 12, color: T.navy, cursor: "pointer" }}>
+      {list.map((e) => <AccesEntryRow key={e.id} entry={e} onChange={(next) => updateEntry(e.id, next)} onRemove={() => removeEntry(e.id)} disabled={!canEdit} />)}
+      {canEdit && <button type="button" onClick={addEntry} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, background: "none", border: `1px dashed ${T.line}`, borderRadius: 9, padding: "7px 12px", fontSize: 12, color: T.navy, cursor: "pointer" }}>
         <Plus size={13} /> Ajouter {category.placeholder ? `(${category.placeholder})` : "un accès"}
-      </button>
+      </button>}
     </Panel>
   );
 }
 
-function AccesTab({ client, onUpdate }) {
+
+/* ============================================================
+   ACCÈS ORGANISMES SOCIAUX — zone hautement sensible.
+   Les secrets sont stockés dans une table dédiée avec RLS Supabase.
+   Seuls Expert / Chef de mission peuvent lire ou modifier ces données.
+   ============================================================ */
+const ORGANISMES_SOCIAUX = ["URSSAF", "NET ENTREPRISE", "SYLAE", "CIBTP", "OPCO", "France Travail", "Médecine du travail", "Autre"];
+
+function SocialAccessPassword({ value, onChange, placeholder = "Mot de passe / clé", disabled = false }) {
+  const [visible, setVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(value || ""); setCopied(true); setTimeout(() => setCopied(false), 1200); } catch {}
+  };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 5, flex: "1 1 220px" }}>
+      <input disabled={disabled} type={visible ? "text" : "password"} value={value || ""} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{ flex: 1, fontFamily: T.mono, fontSize: 12, padding: "7px 9px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card, minWidth: 0 }} />
+      <button type="button" disabled={disabled} onClick={() => setVisible(v => !v)} title={visible ? "Masquer" : "Afficher"}
+        style={{ background: "none", border: `1px solid ${T.line}`, borderRadius: 7, padding: 6, cursor: "pointer", color: T.inkMuted, display: "flex" }}>
+        {visible ? <EyeOff size={13} /> : <Eye size={13} />}
+      </button>
+      <button type="button" onClick={copy} title="Copier" style={{ background: "none", border: `1px solid ${T.line}`, borderRadius: 7, padding: 6, cursor: "pointer", color: copied ? T.green : T.inkMuted, display: "flex" }}>
+        <Copy size={13} />
+      </button>
+    </div>
+  );
+}
+
+function SocialAccessRow({ row, onSave, onDelete, canEdit = true }) {
+  const [draft, setDraft] = useState({ ...row });
+  const dirty = JSON.stringify(draft) !== JSON.stringify(row);
+  const patch = p => setDraft(d => ({ ...d, ...p }));
+  return (
+    <div style={{ border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 12px", marginBottom: 8, background: T.paper }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <select disabled={!canEdit} value={draft.organisme || "Autre"} onChange={e => patch({ organisme: e.target.value })}
+          style={{ minWidth: 165, padding: "7px 9px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card, fontSize: 12, fontWeight: 700, color: T.ink }}>
+          {ORGANISMES_SOCIAUX.map(x => <option key={x}>{x}</option>)}
+        </select>
+        <input disabled={!canEdit} value={draft.libelle || ""} onChange={e => patch({ libelle: e.target.value })} placeholder="Libellé / dossier"
+          style={{ flex: "1 1 180px", padding: "7px 9px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card, fontSize: 12 }} />
+        {canEdit && <button type="button" onClick={onDelete} title="Supprimer" style={{ marginLeft: "auto", background: "none", border: "none", color: T.inkMuted, cursor: "pointer" }}><Trash2 size={14} /></button>}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <input disabled={!canEdit} value={draft.identifiant || ""} onChange={e => patch({ identifiant: e.target.value })} placeholder="Identifiant"
+          style={{ flex: "1 1 150px", padding: "7px 9px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card, fontSize: 12 }} />
+        <input disabled={!canEdit} value={draft.siret || ""} onChange={e => patch({ siret: e.target.value })} placeholder="SIRET (optionnel)"
+          style={{ flex: "1 1 150px", padding: "7px 9px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card, fontSize: 12, fontFamily: T.mono }} />
+        <SocialAccessPassword value={draft.secret} onChange={v => patch({ secret: v })} disabled={!canEdit} />
+      </div>
+      <textarea disabled={!canEdit} value={draft.note || ""} onChange={e => patch({ note: e.target.value })} placeholder="Note / URL / précision"
+        rows={2} style={{ width: "100%", marginTop: 8, padding: "7px 9px", borderRadius: 8, border: `1px solid ${T.line}`, background: T.card, fontSize: 12, resize: "vertical" }} />
+      {dirty && canEdit && <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+        <button type="button" onClick={() => onSave(draft)} style={{ display: "flex", alignItems: "center", gap: 5, background: T.navy, color: "#fff", border: 0, borderRadius: 8, padding: "7px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}><Check size={13} /> Enregistrer</button>
+      </div>}
+    </div>
+  );
+}
+
+function AccesOrganismesSociauxView({ clients, portefeuilleId, me, meRole, onOpenClient }) {
+  const [rows, setRows] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState("");
+  const [importPreview, setImportPreview] = useState(null);
+  const fileRef = useRef(null);
+
+  const reload = useCallback(async () => {
+    setLoading(true); setError("");
+    const data = await loadOrganismesSociauxRemote(portefeuilleId);
+    setRows(data);
+    setLoading(false);
+  }, [portefeuilleId]);
+  useEffect(() => { reload(); }, [reload]);
+
+  const byClient = useMemo(() => {
+    const map = new Map();
+    rows.forEach(r => { if (!map.has(r.client_id)) map.set(r.client_id, []); map.get(r.client_id).push(r); });
+    return [...map.entries()].map(([clientId, access]) => ({ client: clients.find(c => c.id === clientId), access }))
+      .filter(x => x.client)
+      .sort((a,b) => String(a.client.nom).localeCompare(String(b.client.nom), "fr"));
+  }, [rows, clients]);
+
+  const filtered = byClient.filter(group => {
+    const q = search.trim().toLowerCase(); if (!q) return true;
+    return group.client.nom.toLowerCase().includes(q) || String(group.client.siren || "").includes(q) || group.access.some(a => `${a.organisme} ${a.identifiant} ${a.libelle}`.toLowerCase().includes(q));
+  });
+
+  const createRow = async (client) => {
+    if (!canEditOrganismesSociaux(meRole)) return;
+    const row = await insertOrganismeSocialRemote({ portefeuille_id: portefeuilleId, client_id: client.id, organisme: "URSSAF", libelle: "", identifiant: "", secret: "", siret: client.siret || "", note: "", created_by: me });
+    if (row) setRows(prev => [...prev, row]);
+  };
+  const saveRow = async draft => {
+    if (!canEditOrganismesSociaux(meRole)) return;
+    const row = await updateOrganismeSocialRemote(draft.id, { organisme: draft.organisme, libelle: draft.libelle, identifiant: draft.identifiant, secret: draft.secret, siret: draft.siret, note: draft.note, updated_by: me, updated_at: new Date().toISOString() });
+    if (row) setRows(prev => prev.map(r => r.id === row.id ? row : r));
+  };
+  const deleteRow = async id => {
+    if (!canEditOrganismesSociaux(meRole)) return;
+    if (!confirm("Supprimer définitivement cet accès ?")) return;
+    if (await deleteOrganismeSocialRemote(id)) setRows(prev => prev.filter(r => r.id !== id));
+  };
+
+  const importExcel = async file => {
+    if (!canEditOrganismesSociaux(meRole) || !file) return;
+    setImporting(true); setError("");
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      if (!wb.SheetNames.length) throw new Error("Le classeur ne contient aucune feuille exploitable.");
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+      if (!data.length) throw new Error("Aucune ligne de données détectée. Utilisez la première feuille avec une ligne d'en-têtes.");
+      const normalizeKey = key => String(key).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+      const prepared = data.map((raw, index) => {
+        const norm = {}; Object.entries(raw).forEach(([k,v]) => norm[normalizeKey(k)] = String(v ?? "").trim());
+        const clientName = norm.client || norm.clientnom || norm.dossier || norm.societe || norm.societenom || norm.entreprise || norm.entreprisenom || "";
+        const sirenRaw = norm.siren || "";
+        const siretRaw = norm.siret || "";
+        const siren = sirenRaw.replace(/\D/g, "");
+        const siret = siretRaw.replace(/\D/g, "");
+        const client = clients.find(c => {
+          const cName = String(c.nom || "").trim().toLowerCase();
+          const cSiren = String(c.siren || "").replace(/\D/g, "");
+          const cSiret = String(c.siret || "").replace(/\D/g, "");
+          return (clientName && cName === clientName.toLowerCase()) || (siren && cSiren === siren) || (siret && cSiret === siret);
+        });
+        const organismeRaw = norm.organisme || norm.organismesocial || norm.type || "";
+        const knownOrganisme = ORGANISMES_SOCIAUX.find(x => x.toLowerCase() === organismeRaw.toLowerCase());
+        const organisme = knownOrganisme || organismeRaw;
+        const errors = [];
+        const warnings = [];
+        if (!client) errors.push(clientName || siren || siret ? "dossier introuvable (nom/SIREN/SIRET)" : "client ou identifiant de rapprochement manquant");
+        if (!organisme) errors.push("organisme manquant");
+        const identifiant = norm.identifiant || norm.login || norm.username || "";
+        const secret = norm.motdepasse || norm.password || norm.secret || norm.cle || "";
+        if (!identifiant && !secret) warnings.push("aucun identifiant ni secret fourni");
+        if (organismeRaw && !knownOrganisme) warnings.push("organisme non référencé : conservé comme libellé personnalisé");
+        return { line:index+2, client, organisme:organisme || "Autre", libelle:norm.libelle || norm.nom || "", identifiant, secret, siret:siret || client?.siret || "", note:norm.note || norm.url || "", errors, warnings };
+      });
+      const requiredHeaders = ["Client (ou Dossier)", "SIREN ou SIRET", "Organisme"];
+      const actualHeaders = Object.keys(data[0] || {});
+      const normalizedHeaders = actualHeaders.map(normalizeKey);
+      const hasClientHeader = ["client","clientnom","dossier","societe","societenom","entreprise","entreprisenom"].some(h => normalizedHeaders.includes(h));
+      const hasIdHeader = ["siren","siret"].some(h => normalizedHeaders.includes(h));
+      const hasOrgHeader = ["organisme","organismesocial","type"].some(h => normalizedHeaders.includes(h));
+      const missingHeaders = [];
+      if (!hasClientHeader && !hasIdHeader) missingHeaders.push("Client/Dossier ou SIREN/SIRET");
+      if (!hasOrgHeader) missingHeaders.push("Organisme");
+      setImportPreview({ rows: prepared, valid: prepared.filter(r => !r.errors.length), fileName:file.name, sheetName:wb.SheetNames[0], total:data.length, headers:actualHeaders, missingHeaders, requiredHeaders, warningsCount:prepared.reduce((n,r)=>n+r.warnings.length,0) });
+    } catch (e) { setError(e?.message || "Impossible de lire le fichier Excel."); }
+    finally { setImporting(false); if (fileRef.current) fileRef.current.value = ""; }
+  };
+  const confirmImportExcel = async () => {
+    const valid = importPreview?.valid || []; if (!valid.length) return;
+    setImporting(true); setError("");
+    try {
+      let added=0;
+      for (const r of valid) {
+        const row=await insertOrganismeSocialRemote({ portefeuille_id:portefeuilleId, client_id:r.client.id, organisme:r.organisme, libelle:r.libelle, identifiant:r.identifiant, secret:r.secret, siret:r.siret, note:r.note, created_by:me });
+        if(row){ setRows(prev=>[...prev,row]); added++; }
+      }
+      setImportPreview(null); if(!added) setError("Aucun accès n'a été créé. Vérifiez les droits et les données du fichier.");
+    } catch(e){ setError(e?.message || "L'import n'a pas pu être finalisé."); } finally { setImporting(false); }
+  };
+
+  return (
+    <div>
+      <Reveal>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 14 }}>
+          <div>
+            <h2 style={{ margin: 0, fontFamily: T.serif, fontSize: 18, color: T.ink }}>Accès organismes sociaux</h2>
+            <p style={{ margin: "5px 0 0", color: T.inkMuted, fontSize: 11.5, lineHeight: 1.5 }}>URSSAF, Net-entreprise, SYLAE, CIBTP, OPCO, France Travail, médecine du travail… Un dossier à la fois, avec recherche et import Excel.</p>
+          </div>
+          <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={e => importExcel(e.target.files?.[0])} style={{ display: "none" }} disabled={!canEditOrganismesSociaux(meRole)} />
+            {canEditOrganismesSociaux(meRole) && <button onClick={() => downloadOrganismesTemplate()} type="button" className="btn-secondary !py-2"><Download size={13} /> Télécharger le modèle Excel</button>}
+            {canEditOrganismesSociaux(meRole) && <button onClick={() => setImportPreview({ mode:"instructions", fileName:"Format attendu" })} type="button" className="btn-secondary !py-2"><Info size={13} /> Format attendu</button>}
+            {canEditOrganismesSociaux(meRole) && <button onClick={() => fileRef.current?.click()} disabled={importing} style={{ display: "flex", alignItems: "center", gap: 6, background: T.navy, color: "#fff", border: 0, borderRadius: 9, padding: "8px 12px", fontSize: 11.5, fontWeight: 700, cursor: importing ? "default" : "pointer", opacity: importing ? .7 : 1 }}><Download size={13} /> {importing ? "Analyse…" : "Importer le classeur Excel"}</button>}
+            <span style={{ fontSize: 10.5, color: T.green, fontWeight: 700, background: T.greenSoft, padding: "6px 9px", borderRadius: 999 }}>{rows.length} accès enregistrés</span>
+          </div>
+        </div>
+      </Reveal>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <div style={{ position: "relative", flex: 1 }}><Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.inkMuted }} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un dossier, SIREN ou organisme…" style={{ width: "100%", padding: "8px 10px 8px 31px", borderRadius: 9, border: `1px solid ${T.line}`, background: T.card, fontSize: 12 }} /></div>
+      </div>
+      <div style={{ background: T.navySoft, color: T.inkSoft, borderRadius: 9, padding: "8px 11px", fontSize: 11, display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}><ShieldCheck size={14} color={T.navy} /> Rubrique visible par tous. <b>Modification réservée aux Admin, Experts, Chefs de mission et Gestionnaires de paie.</b> Les droits sont également appliqués côté Supabase (RLS).</div>
+      {error && <div style={{ background: T.redSoft, color: T.red, borderRadius: 9, padding: "8px 11px", fontSize: 11, marginBottom: 10 }}>{error}</div>}
+      {loading ? <EmptyNote text="Chargement des accès…" /> : filtered.length === 0 ? <EmptyNote text="Aucun accès organisme social enregistré." /> : filtered.map(({ client, access }) => (
+        <Panel key={client.id} title={<div style={{ display: "flex", alignItems: "center", gap: 8 }}><span>{client.nom}</span><span style={{ fontFamily: T.mono, fontSize: 10, color: T.inkMuted }}>{client.siren || ""}</span></div>} right={<Stamped tone="green" small>{access.length} organisme{access.length > 1 ? "s" : ""}</Stamped>}>
+          {access.map(row => <SocialAccessRow key={row.id} row={row} onSave={saveRow} onDelete={() => deleteRow(row.id)} canEdit={canEditOrganismesSociaux(meRole)} />)}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {canEditOrganismesSociaux(meRole) && <button onClick={() => createRow(client)} style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: `1px dashed ${T.line}`, borderRadius: 8, padding: "7px 10px", color: T.navy, fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}><Plus size={13} /> Ajouter un accès</button>}
+            <button onClick={() => onOpenClient(client.id)} style={{ background: "none", border: "none", color: T.inkMuted, fontSize: 11, cursor: "pointer" }}>Ouvrir la fiche client →</button>
+          </div>
+        </Panel>
+      ))}
+      <OrganismesImportPreviewModal preview={importPreview} importing={importing} onClose={()=>setImportPreview(null)} onConfirm={confirmImportExcel} />
+    </div>
+  );
+}
+
+function downloadOrganismesTemplate() {
+  const rows = [
+    { Client: "SZ DECO", SIREN: "799300223", SIRET: "98297797700015", Organisme: "URSSAF", Libellé: "Compte principal", Identifiant: "2PYJ", "Mot de passe": "", URL: "https://www.urssaf.fr", Note: "" },
+    { Client: "SZ DECO", SIREN: "799300223", SIRET: "98297797700015", Organisme: "NET ENTREPRISE", Libellé: "Compte principal", Identifiant: "MUNAWAR IQBAL", "Mot de passe": "", URL: "https://www.net-entreprises.fr", Note: "" },
+    { Client: "ARC BTP", SIREN: "123456789", SIRET: "12345678901234", Organisme: "CIBTP", Libellé: "Compte principal", Identifiant: "ABC123", "Mot de passe": "", URL: "", Note: "Exemple BTP" },
+  ];
+  const instructions = [
+    ["Champ", "Obligatoire", "Description", "Exemple"],
+    ["Client", "Oui si SIREN/SIRET absent", "Nom exact du dossier dans NOVACAB", "SZ DECO"],
+    ["SIREN", "Oui si Client absent", "Identifiant entreprise utilisé pour le rapprochement", "799300223"],
+    ["SIRET", "Optionnel", "Permet un rapprochement complémentaire", "98297797700015"],
+    ["Organisme", "Oui", "URSSAF, NET ENTREPRISE, SYLAE, CIBTP, PRO BTP, OPCO…", "URSSAF"],
+    ["Libellé", "Non", "Nom libre du compte / dossier", "Compte principal"],
+    ["Identifiant", "Non", "Login, identifiant ou nom de compte", "2PYJ"],
+    ["Mot de passe", "Non", "Secret / mot de passe", "********"],
+    ["URL", "Non", "Adresse du portail", "https://www.urssaf.fr"],
+    ["Note", "Non", "Précision complémentaire", "Compte principal"],
+    [],
+    ["Règles d'import", "", "", ""],
+    ["1", "", "Une ligne = un accès organisme pour un dossier.", ""],
+    ["2", "", "Le dossier est recherché par nom exact, puis SIREN, puis SIRET.", ""],
+    ["3", "", "Client/Dossier ou SIREN/SIRET + Organisme sont nécessaires.", ""],
+    ["4", "", "Identifiant, mot de passe, URL et note peuvent être vides.", ""],
+    ["5", "", "Les lignes non reconnues sont affichées avant import et ne sont jamais écrites automatiquement.", ""],
+  ];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws["!cols"] = [18,14,18,22,24,24,22,36,28].map(w => ({ wch:w }));
+  XLSX.utils.book_append_sheet(wb, ws, "Accès organismes");
+  const wi = XLSX.utils.aoa_to_sheet(instructions);
+  wi["!cols"] = [{wch:28},{wch:20},{wch:72},{wch:30}];
+  XLSX.utils.book_append_sheet(wb, wi, "Instructions");
+  XLSX.writeFile(wb, "modele-acces-organismes-sociaux-NOVACAB.xlsx");
+}
+
+function OrganismesImportPreviewModal({ preview, importing, onClose, onConfirm }) {
+  if (!preview) return null;
+  const instructionsOnly = preview.mode === "instructions";
+  const valid = preview.valid || [];
+  const invalid = (preview.rows || []).filter(r => r.errors?.length);
+  const warnings = (preview.rows || []).filter(r => r.warnings?.length);
+  return <div style={{position:"fixed",inset:0,zIndex:90,display:"flex",alignItems:"center",justifyContent:"center"}}>
+    <div onClick={()=>!importing && onClose()} style={{position:"absolute",inset:0,background:"rgba(15,23,42,.42)"}}/>
+    <div className="scrollbar" style={{position:"relative",width:"min(980px,94vw)",maxHeight:"90vh",overflowY:"auto",background:T.paper,borderRadius:16,boxShadow:T.shadowLg,padding:22}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}><div><h3 style={{margin:0,fontFamily:T.serif,fontSize:16,fontWeight:800,color:T.ink}}>{instructionsOnly ? "Format attendu — Accès organismes sociaux" : "Import des accès organismes — prévisualisation"}</h3><p style={{margin:"5px 0 0",fontSize:11.5,color:T.inkMuted}}>{instructionsOnly ? "Préparez le fichier avant de lancer l'import. Aucun fichier n'est envoyé depuis cet écran." : `Fichier : ${preview.fileName}. Aucun accès ne sera créé avant confirmation.`}</p></div><button className="topIconBtn" onClick={onClose} disabled={importing}><X size={16}/></button></div>
+      <div style={{marginTop:12,padding:13,border:`1px solid ${T.line}`,borderRadius:12,background:T.card,fontSize:11.5,color:T.inkSoft,lineHeight:1.7}}>
+        <b style={{color:T.ink}}>Colonnes attendues</b><br/>
+        <span style={{color:T.green,fontWeight:700}}>Obligatoires :</span> <b>Organisme</b> + <b>Client/Dossier</b> ou <b>SIREN/SIRET</b>.<br/>
+        <span style={{color:T.navy,fontWeight:700}}>Optionnelles :</span> Client, SIREN, SIRET, Libellé, Identifiant, Mot de passe, URL, Note.<br/>
+        <span style={{color:T.inkMuted}}>Rapprochement : nom exact du dossier → SIREN → SIRET. Les lignes non reconnues restent bloquées jusqu'à correction.</span>
+      </div>
+      {instructionsOnly ? <div style={{marginTop:14}}>
+        <div style={{fontWeight:800,color:T.ink,fontSize:12.5,marginBottom:8}}>Exemple d'une ligne</div>
+        <div style={{overflowX:"auto",border:`1px solid ${T.line}`,borderRadius:10}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:10.5}}><thead><tr>{["Client","SIREN","SIRET","Organisme","Libellé","Identifiant","Mot de passe","URL","Note"].map(h=><th key={h} style={{textAlign:"left",padding:"8px",background:T.navySoft,color:T.ink,borderBottom:`1px solid ${T.line}`,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead><tbody><tr>{["SZ DECO","799300223","98297797700015","URSSAF","Compte principal","2PYJ","","https://www.urssaf.fr",""] .map((v,i)=><td key={i} style={{padding:"8px",borderBottom:`1px solid ${T.line}`,color:T.inkSoft,whiteSpace:"nowrap"}}>{v || "—"}</td>)}</tr></tbody></table></div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}><Stamped tone="green" small>Prévisualisation avant import</Stamped><Stamped tone="blue" small>Les erreurs ne bloquent pas les lignes valides</Stamped><Stamped tone="amber" small>Une confirmation est obligatoire</Stamped></div>
+        <div style={{marginTop:14,padding:12,border:`1px solid ${T.line}`,borderRadius:10,background:T.navySoft,fontSize:11,color:T.inkSoft,lineHeight:1.6}}><b>Conseil :</b> utilisez le bouton <b>« Télécharger le modèle Excel »</b> pour obtenir directement les deux feuilles <b>Accès organismes</b> et <b>Instructions</b>.</div>
+      </div> : <>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}><Stamped tone="green" small>{valid.length} ligne(s) prête(s)</Stamped><Stamped tone={invalid.length?"red":"green"} small>{invalid.length} erreur(s) bloquante(s)</Stamped><Stamped tone={warnings.length?"amber":"green"} small>{warnings.length} avertissement(s)</Stamped><span style={{fontSize:10.5,color:T.inkMuted,alignSelf:"center"}}>{preview.total || preview.rows?.length || 0} ligne(s) analysée(s)</span></div>
+        {preview.missingHeaders?.length > 0 && <div style={{marginTop:10,padding:10,borderRadius:10,background:T.redSoft,color:T.red,fontSize:11,fontWeight:700}}>En-têtes à ajouter ou corriger : {preview.missingHeaders.join(" · ")}</div>}
+        <div style={{marginTop:10,padding:10,borderRadius:10,background:T.card,border:`1px solid ${T.line}`,fontSize:10.5,color:T.inkMuted}}>En-têtes détectées : {preview.headers?.join(" · ") || "aucune"}</div>
+        <div className="scrollbar" style={{marginTop:10,maxHeight:360,overflowY:"auto",border:`1px solid ${T.line}`,borderRadius:10,background:T.card}}>{(preview.rows || []).slice(0,80).map(r=><div key={r.line} style={{display:"grid",gridTemplateColumns:"44px 1.1fr 130px 1.8fr",gap:8,padding:"8px 9px",borderBottom:`1px solid ${T.line}`,fontSize:10.5,alignItems:"start"}}><span style={{color:T.inkMuted}}>L{r.line}</span><b>{r.client?.nom || "—"}</b><span>{r.organisme || "—"}</span><div style={{color:r.errors.length?T.red:r.warnings?.length?T.amber:T.green}}>{r.errors.length ? `❌ ${r.errors.join(" · ")}` : r.warnings?.length ? `⚠ ${r.warnings.join(" · ")}` : "✓ Ligne prête"}</div></div>)}</div>
+        {(preview.rows || []).length > 80 && <div style={{fontSize:10.5,color:T.inkMuted,marginTop:7}}>Aperçu limité aux 80 premières lignes. Le compteur concerne tout le fichier.</div>}
+      </>}
+      <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:16,flexWrap:"wrap"}}><button className="btn-secondary" onClick={downloadOrganismesTemplate} disabled={importing}><Download size={13}/> Télécharger le modèle Excel</button><div style={{display:"flex",gap:8}}><button className="btn-secondary" onClick={onClose} disabled={importing}>Fermer</button>{!instructionsOnly && <button className="btn-primary" onClick={onConfirm} disabled={importing || !valid.length || preview.missingHeaders?.length}>{importing?"Import en cours…":`Importer ${valid.length} ligne(s) valides`}</button>}</div></div>
+    </div>
+  </div>;
+}
+
+function AccesOrganismesSociauxTab({ client, portefeuilleId, meId, canEdit = false }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const reload = useCallback(async () => { setLoading(true); setRows(await loadOrganismesSociauxRemote(portefeuilleId, client.id)); setLoading(false); }, [portefeuilleId, client.id]);
+  useEffect(() => { reload(); }, [reload]);
+  const add = async () => {
+    if (!canEdit) return;
+    const row = await insertOrganismeSocialRemote({ portefeuille_id: portefeuilleId, client_id: client.id, organisme: "URSSAF", libelle: "", identifiant: "", secret: "", siret: client.siret || "", note: "", created_by: meId || null });
+    if (row) setRows(prev => [...prev, row]);
+  };
+  const save = async draft => { if (!canEdit) return; const row = await updateOrganismeSocialRemote(draft.id, { organisme: draft.organisme, libelle: draft.libelle, identifiant: draft.identifiant, secret: draft.secret, siret: draft.siret, note: draft.note, updated_by: meId || null, updated_at: new Date().toISOString() }); if (row) setRows(prev => prev.map(r => r.id === row.id ? row : r)); };
+  const remove = async id => { if (!canEdit) return; if (!confirm("Supprimer définitivement cet accès ?")) return; if (await deleteOrganismeSocialRemote(id)) setRows(prev => prev.filter(r => r.id !== id)); };
+  return <div>
+    <div style={{ fontSize: 11.5, color: T.inkSoft, background: T.navySoft, padding: "9px 12px", borderRadius: 9, marginBottom: 15, display: "flex", alignItems: "center", gap: 8 }}><ShieldCheck size={15} color={T.navy} /> Accès visibles par tous les utilisateurs autorisés du cabinet. <b>Modification réservée aux Admin, Experts, Chefs de mission et Gestionnaires de paie.</b></div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}><div><div style={{ fontWeight: 800, color: T.navy, fontSize: 13.5 }}>Organismes sociaux — {client.nom}</div><div style={{ color: T.inkMuted, fontSize: 10.5, marginTop: 2 }}>Codes, identifiants et accès du dossier</div></div>{canEdit && <button onClick={add} style={{ display: "flex", alignItems: "center", gap: 5, background: T.navy, color: "#fff", border: 0, borderRadius: 8, padding: "7px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}><Plus size={13} /> Ajouter</button>}</div>
+    {loading ? <EmptyNote text="Chargement…" /> : rows.length ? rows.map(row => <SocialAccessRow key={row.id} row={row} onSave={save} onDelete={() => remove(row.id)} canEdit={canEdit} />) : <EmptyNote text="Aucun accès organisme social enregistré pour ce dossier." />}
+  </div>;
+}
+
+function AccesTab({ client, onUpdate, canEdit = true }) {
   const acces = client.acces || {};
-  const patchCategory = (key, list) => onUpdate(client.id, { acces: { ...acces, [key]: list } });
+  const patchCategory = (key, list) => { if (canEdit) onUpdate(client.id, { acces: { ...acces, [key]: list } }); };
   return (
     <div>
       <div style={{ fontSize: 11.5, color: T.inkMuted, background: T.navySoft, padding: "8px 12px", borderRadius: 9, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
@@ -4347,7 +5148,7 @@ function AccesTab({ client, onUpdate }) {
       </div>
       {ACCES_CATEGORIES.map((cat, i) => (
         <div key={cat.key}>
-          <AccesCategoryPanel category={cat} entries={acces[cat.key]} onUpdate={(list) => patchCategory(cat.key, list)} />
+          <AccesCategoryPanel category={cat} entries={acces[cat.key]} onUpdate={(list) => patchCategory(cat.key, list)} canEdit={canEdit} />
           {i < ACCES_CATEGORIES.length - 1 && <div style={{ height: 14 }} />}
         </div>
       ))}
@@ -4430,6 +5231,7 @@ function InfosTab({ client, team, onUpdate, setView }) {
       </FieldRow>
       <FieldRow label="Forme juridique"><SelectPill value={client.formeJuridique} options={["EI", "EURL", "SARL", "SAS", "SASU", "SCI", "SCM", "SELARL", "SA", "SNC", "Association"]} onChange={(v) => onUpdate(client.id, { formeJuridique: v })} /></FieldRow>
       <FieldRow label="Régime fiscal"><SelectPill value={client.regimeFiscal} options={["IS", "IR"]} labels={{ IS: "IS — Impôt sur les sociétés", IR: "IR — Impôt sur le revenu" }} onChange={(v) => onUpdate(client.id, { regimeFiscal: v })} /></FieldRow>
+      <FieldRow label="Catégorie fiscale"><SelectPill value={client.categorieFiscale || ""} options={["", "BIC", "BNC", "BA", "EI", "IS"]} labels={{ "": "Auto-détection", BIC: "BIC — bénéfices industriels et commerciaux", BNC: "BNC — bénéfices non commerciaux", BA: "BA — bénéfices agricoles", EI: "EI — entreprise individuelle", IS: "IS — société à l'IS" }} onChange={(v) => onUpdate(client.id, { categorieFiscale: v })} /></FieldRow>
       <FieldRow label="Capital social"><TextInput defaultValue={client.capital} onCommit={(v) => onUpdate(client.id, { capital: v })} placeholder="ex. 5 000 €" width={140} /></FieldRow>
       <FieldRow label="Code NAF / APE"><TextInput defaultValue={client.codeNaf} onCommit={(v) => onUpdate(client.id, { codeNaf: v.toUpperCase(), secteur: classifyNaf(v) })} placeholder="ex. 56.10A" width={140} /></FieldRow>
       <FieldRow label="Activité"><TextInput defaultValue={client.activite} onCommit={(v) => onUpdate(client.id, { activite: v })} placeholder="Information descriptive" width={200} align="left" /></FieldRow>
@@ -4606,6 +5408,23 @@ function TvaTab({ client, onUpdate }) {
           <div style={{ fontSize: 12, color: T.ink, background: T.redSoft || "#FEECEC", border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 10px", maxWidth: 320 }}>{currentNote}</div>
         </FieldRow>
       )}
+      <div style={{ height: 14 }} />
+      {(() => {
+        const detailKey = client.tvaRegime === "CA12" ? "Mai" : currentMonthKey();
+        const d = client.tvaDetails?.[detailKey] || {};
+        const patchDetails = (field, value) => onUpdate(client.id, { tvaDetails: { ...(client.tvaDetails || {}), [detailKey]: { ...d, [field]: value } } });
+        return (
+          <Panel title={`Données de déclaration — ${detailKey}`}>
+            <div style={{ fontSize: 11, color: T.inkMuted, marginBottom: 10, lineHeight: 1.5 }}>Ces données servent aussi à préremplir automatiquement le mail de déclaration de TVA.</div>
+            <FieldRow label="Montant HT encaissé"><TextInput defaultValue={d.htEncaisse || ""} onCommit={(v) => patchDetails("htEncaisse", v)} placeholder="ex. 25 000 €" width={170} /></FieldRow>
+            <FieldRow label="TVA collectée"><TextInput defaultValue={d.tvaCollectee || ""} onCommit={(v) => patchDetails("tvaCollectee", v)} placeholder="ex. 5 000 €" width={170} /></FieldRow>
+            <FieldRow label="TVA déductible"><TextInput defaultValue={d.tvaDeductible || ""} onCommit={(v) => patchDetails("tvaDeductible", v)} placeholder="ex. 1 800 €" width={170} /></FieldRow>
+            <FieldRow label="TVA sous-traitant"><TextInput defaultValue={d.tvaSousTraitant || ""} onCommit={(v) => patchDetails("tvaSousTraitant", v)} placeholder="ex. 200 € — si applicable" width={170} /></FieldRow>
+            <FieldRow label="Montant à payer / crédit"><TextInput defaultValue={d.montantAPayer || ""} onCommit={(v) => patchDetails("montantAPayer", v)} placeholder="ex. 3 000 € ou crédit 500 €" width={210} /></FieldRow>
+            <FieldRow label="Autres informations"><TextInput defaultValue={d.autres || ""} onCommit={(v) => patchDetails("autres", v)} placeholder="Acompte, autoliquidation, remarque…" width={280} align="left" /></FieldRow>
+          </Panel>
+        );
+      })()}
       <div style={{ height: 14 }} />
       <Panel title="Paiement de TVA">
         <PaymentLine
@@ -5336,7 +6155,7 @@ function ReprisesView({ clients, search, roleFilter, setRoleFilter, me, meId, po
 /* ============================================================
    TVA GRID VIEW
    ============================================================ */
-function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onReview, onUpdate, onOpenClient }) {
+function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onReview, onUpdate, onOpenClient, onGenerateMail }) {
   const [collabFilter, setCollabFilter] = useState("Tous");
   const [regimeHeaderFilter, setRegimeHeaderFilter] = useState("Tous");
   const [exigHeaderFilter, setExigHeaderFilter] = useState("Tous");
@@ -5418,6 +6237,7 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onRe
               </select>
             </th>
             {MOIS_ORDER.map((m) => <th key={m} style={{ ...thStyle, textAlign: "center" }}>{m}</th>)}
+            <th style={{ ...thStyle, textAlign: "center" }}>Mail</th>
           </tr></thead>
           <tbody>
 {filtered.map((c, rowIndex) => {
@@ -5500,6 +6320,11 @@ function TvaGrid({ clients, search, roleFilter, setRoleFilter, me, onCycle, onRe
                     </td>
                   );
                 })}
+                <td style={{ ...tdStyle, textAlign: "center" }}>
+                  <button onClick={(e) => { e.stopPropagation(); onGenerateMail?.(c.id); }} title="Générer le mail de TVA" style={{ display: "inline-flex", alignItems: "center", gap: 4, border: `1px solid ${T.line}`, background: T.card, color: T.navy, borderRadius: 8, padding: "5px 7px", cursor: "pointer", fontSize: 10.5, fontWeight: 700 }}>
+                    <Mail size={12} /> Générer
+                  </button>
+                </td>
               </tr>
             );})}
           </tbody>
@@ -5754,7 +6579,7 @@ function AgeAgoEditor({ client, onUpdate }) {
             <div style={{ fontFamily: T.serif, fontWeight: 600, fontSize: 13, color: T.navy, marginBottom: 8 }}>Exercice {year}</div>
             <FieldRow label="Assemblée tenue (AGO)"><ToggleBtn on={!!y.ago} onClick={() => patchYear(year, { ago: !y.ago })} /></FieldRow>
             <FieldRow label="Déposée au greffe"><ToggleBtn on={!!y.depose} onClick={() => patchYear(year, { depose: !y.depose })} /></FieldRow>
-            <FieldRow label="Déposée par"><TextInput defaultValue={y.deposePar} onCommit={(v) => patchYear(year, { deposePar: v })} placeholder="ex. Soli" width={140} /></FieldRow>
+            <FieldRow label="Déposée par"><TextInput defaultValue={y.deposePar} onCommit={(v) => patchYear(year, { deposePar: v })} placeholder="ex. Louis Dupont" width={140} /></FieldRow>
             <FieldRow label="Capitaux propres < 1/2 capital social"><ToggleBtn on={!!y.capitauxInf} onClick={() => patchYear(year, { capitauxInf: !y.capitauxInf })} tone="red" /></FieldRow>
             <FieldRow label="AGE continuité d'exploitation requise"><ToggleBtn on={!!y.ageContinuite} onClick={() => patchYear(year, { ageContinuite: !y.ageContinuite })} tone="red" /></FieldRow>
           </div>
@@ -5843,7 +6668,7 @@ function RevisionTab({ client, onUpdate, setView }) {
 
       <Panel title="Révision des comptes de cotisations">
         <p style={{ fontSize: 12, color: T.inkMuted, margin: "0 0 10px" }}>
-          La révision mensuelle (URSSAF, retraite, prévoyance{client.secteur === "batiment" ? ", PRO BTP, CIBTP" : ""}) se fait désormais depuis Social &amp; paie, sous forme de grille mensuelle.
+          La révision mensuelle (URSSAF, retraite, prévoyance{isBtpClient(client) ? ", PRO BTP, CIBTP" : ""}) se fait désormais depuis Social &amp; paie, sous forme de grille mensuelle.
         </p>
         <button onClick={() => setView && setView("cotisations")} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${T.line}`, borderRadius: 9, padding: "7px 12px", fontSize: 12, color: T.navy, cursor: "pointer" }}>
           <ArrowUpRight size={13} /> Ouvrir les Cotisations sociales
@@ -6428,7 +7253,7 @@ function GestionnairePaieView({ clients, search, setSearch, roleFilter, setRoleF
 /* ============================================================
    COTISATIONS SOCIALES — grille mensuelle cliquable (comme les
    rapprochements bancaires) pour URSSAF / retraite / prévoyance
-   (+ PRO BTP / CIBTP si secteur BTP). Historique conservé mois
+   (+ PRO BTP / CIBTP automatiquement si le code NAF ou l’activité identifie le BTP). Historique conservé mois
    par mois dans client.revision.cotisMois.
    ============================================================ */
 const COTISATION_TYPES = [
@@ -6440,8 +7265,19 @@ const COTISATION_TYPES_BTP = [
   { key: "proBtp", label: "PRO BTP" },
   { key: "ciBtp", label: "CIBTP (caisse congés payés)" },
 ];
+
+// Le code NAF est la source prioritaire pour déterminer les vérifications sociales.
+// Le secteur déjà classé reste un filet de sécurité, puis l'activité textuelle en dernier recours.
+const BTP_NAF_PREFIXES = ["41", "42", "43"];
+const isBtpClient = (client) => {
+  const naf = String(client?.codeNaf || "").trim().replace(/[^0-9A-Z]/gi, "").toUpperCase();
+  if (BTP_NAF_PREFIXES.some(prefix => naf.startsWith(prefix))) return true;
+  if (client?.secteur === "batiment") return true;
+  const activity = normalizeText(client?.activite || "");
+  return ACTIVITE_KEYWORDS.find(x => x.secteurId === "batiment")?.keywords.some(k => activity.includes(normalizeText(k))) || false;
+};
 function cotisationTypesFor(client) {
-  return client.secteur === "batiment" ? [...COTISATION_TYPES, ...COTISATION_TYPES_BTP] : COTISATION_TYPES;
+  return isBtpClient(client) ? [...COTISATION_TYPES, ...COTISATION_TYPES_BTP] : COTISATION_TYPES;
 }
 function CotisationMonthlyGrid({ client, onUpdate }) {
   const rev = client.revision || {};
@@ -6508,6 +7344,169 @@ function CotisationsSocialesView({ clients, search, roleFilter, setRoleFilter, m
     </div>
   );
 }
+
+function SocialPaieCentre({ clients, team, search, setSearch, roleFilter, setRoleFilter, me, meRole, onUpdate, portefeuilleId, onOpenClient, onCreateTask }) {
+  const [tab, setTab] = useState("overview");
+  const [showNewAction, setShowNewAction] = useState(false);
+  const [socialImport, setSocialImport] = useState({ open: false, file: null, preview: null, busy: false, error: "" });
+  const socialFileRef = useRef(null);
+
+  const normalizeHeader = (v) => normalizeText(v).replace(/\s+/g, "");
+  const normalizeMonth = (v) => {
+    const raw = normalizeText(v);
+    const aliases = { janvier:"Jan", jan:"Jan", fevrier:"Fév", fev:"Fév", février:"Fév", fevr:"Fév", mars:"Mar", avril:"Avr", avr:"Avr", mai:"Mai", juin:"Juin", juillet:"Juil", juil:"Juil", aout:"Août", août:"Août", septembre:"Sept", sept:"Sept", octobre:"Oct", oct:"Oct", novembre:"Nov", nov:"Nov", decembre:"Déc", décembre:"Déc", dec:"Déc" };
+    if (/^\d{1,2}$/.test(raw)) return MOIS_ORDER[Number(raw)-1] || null;
+    return aliases[raw] || MOIS_ORDER.find(m => normalizeText(m) === raw) || null;
+  };
+  const normalizeOdStatus = (v) => {
+    const x = normalizeText(v).toUpperCase();
+    if (!x) return "";
+    if (["RECU","RECUE","RECUe","RECEIVED"].includes(x) || x.includes("RECU")) return "RECU";
+    if (x.includes("COMPTA") || x.includes("COMPTABIL")) return "COMPTA";
+    if (x === "NA" || x.includes("NON APPLICABLE")) return "NA";
+    return null;
+  };
+  const parseSocialImport = async (file) => {
+    setSocialImport({ open: true, file, preview: null, busy: true, error: "" });
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+      const rows = rawRows.map((raw, index) => {
+        const norm = {}; Object.entries(raw).forEach(([k,v]) => norm[normalizeHeader(k)] = String(v ?? "").trim());
+        const clientName = norm.client || norm.clientnom || norm.dossier || norm.societe || norm.societenom || "";
+        const siren = (norm.siren || norm.siret || "").replace(/\D/g, "");
+        const month = normalizeMonth(norm.mois || norm.periode || norm.month || "");
+        const status = normalizeOdStatus(norm.statut || norm.etat || norm.od || norm.etatod || "");
+        const client = clients.find(c => (clientName && c.nom.toLowerCase() === clientName.toLowerCase()) || (siren && String(c.siren || "").replace(/\D/g, "") === siren.slice(0,9)));
+        const errors = [];
+        if (!client) errors.push("dossier introuvable (nom ou SIREN)");
+        if (!month) errors.push("mois invalide");
+        if (status === null || status === "") errors.push("statut obligatoire : Reçu, Compta ou N/A");
+        return { index: index + 2, client, clientName, siren, month, status, errors, raw };
+      });
+      const valid = rows.filter(r => r.errors.length === 0);
+      setSocialImport({ open: true, file, preview: { rows, valid }, busy: false, error: "" });
+    } catch (e) {
+      setSocialImport({ open: true, file, preview: null, busy: false, error: e?.message || "Impossible de lire le fichier." });
+    }
+  };
+  const confirmSocialImport = async () => {
+    const valid = socialImport.preview?.valid || []; if (!valid.length) return;
+    setSocialImport(s => ({ ...s, busy: true, error: "" }));
+    try {
+      for (const r of valid) {
+        const c = r.client; const social = c.social || {}; const odMois = { ...(social.odMois || {}) };
+        odMois[r.month] = r.status; await onUpdate(c.id, { social: { ...social, odMois } });
+      }
+      setSocialImport({ open: false, file: null, preview: null, busy: false, error: "" });
+    } catch (e) { setSocialImport(s => ({ ...s, busy: false, error: e?.message || "L'import n'a pas pu être finalisé." })); }
+  };
+  const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
+  const concernes = filtered.filter((c) => c.social?.concerne);
+  const currentMonth = currentMonthKey();
+  const totalDossiers = concernes.length;
+  const odRecus = concernes.filter((c) => ["RECU", "COMPTA"].includes((c.social?.odMois?.[currentMonth] || "").toUpperCase())).length;
+  const odCompta = concernes.filter((c) => (c.social?.odMois?.[currentMonth] || "").toUpperCase() === "COMPTA").length;
+  const cotisDone = concernes.filter((c) => {
+    const types = cotisationTypesFor(c); const rev = c.revision || {}; const cm = rev.cotisMois || {};
+    return types.length > 0 && types.every((t) => (cm[t.key]?.[currentMonth] || "") !== "");
+  }).length;
+  const stats = [
+    { label: "Dossiers sociaux", value: totalDossiers, detail: "dossiers concernés", icon: Users, tone: "blue" },
+    { label: "OD de salaires", value: odRecus, detail: `${odCompta} comptabilisées`, icon: Receipt, tone: "green" },
+    { label: "Cotisations", value: cotisDone, detail: "dossiers suivis ce mois", icon: Landmark, tone: "purple" },
+    { label: "Accès organismes", value: "Sécurisés", detail: "URSSAF · Net-entreprises · SYLAE…", icon: ShieldCheck, tone: "orange" },
+  ];
+  const tone = { blue: "#2563EB", green: "#16A34A", purple: "#7C3AED", orange: "#EA580C" };
+  const tabs = [
+    ["overview", "Vue d'ensemble"],
+    ["social", "Suivi social (OD salaires)"],
+    ["cotisations", "Cotisations sociales"],
+    ["paie", "Gestionnaire de paie"],
+    ["acces", "Accès organismes sociaux"],
+  ];
+  return <div>
+    <Reveal>
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-3">
+        <div><h1 style={{fontFamily:T.serif,fontSize:22,fontWeight:800,color:T.ink,margin:0}}>Social &amp; paie</h1><p style={{color:T.inkMuted,fontSize:12.5,margin:"5px 0 0"}}>Suivez les OD de salaires, les cotisations et les accès aux organismes sociaux.</p></div>
+        <div className="flex gap-2">
+          <input ref={socialFileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => { const f=e.target.files?.[0]; e.target.value=""; if(f) parseSocialImport(f); }} />
+          <button className="btn-secondary" onClick={()=>socialFileRef.current?.click()}><Download size={14}/> Importer Excel/CSV</button>
+          <button className="btn-primary" onClick={()=>setShowNewAction(true)}><Plus size={14}/> Nouvelle action</button>
+        </div>
+      </div>
+    </Reveal>
+    <div className="flex gap-5 border-b border-line mb-4 overflow-x-auto scrollbar">
+      {tabs.map(([id,label])=><button key={id} onClick={()=>setTab(id)} className={`whitespace-nowrap px-2 pb-2.5 text-[11.5px] font-semibold border-b-2 transition-colors ${tab===id?"border-accent text-accent":"border-transparent text-inkmuted hover:text-ink"}`}>{label}</button>)}
+    </div>
+    {tab === "overview" && <>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
+        {stats.map((s)=><div key={s.label} className="card p-4 flex items-start gap-3"><div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{background:`${tone[s.tone]}12`,color:tone[s.tone]}}><s.icon size={19}/></div><div><div className="text-[11px] text-inkmuted">{s.label}</div><div className="text-xl font-extrabold text-ink mt-0.5">{s.value}</div><div className="text-[10px] text-inkmuted mt-1">{s.detail}</div></div></div>)}
+      </div>
+      <div className="grid xl:grid-cols-2 gap-4">
+        <Panel title="Suivi des OD de salaires">
+          <div className="flex items-center justify-between py-2 border-b border-line"><span className="text-xs text-inksoft">Dossiers concernés</span><b className="text-sm text-ink">{totalDossiers}</b></div>
+          <div className="flex items-center justify-between py-2 border-b border-line"><span className="text-xs text-inksoft">OD reçues</span><b className="text-sm text-ink">{odRecus}</b></div>
+          <div className="flex items-center justify-between py-2"><span className="text-xs text-inksoft">OD comptabilisées</span><b className="text-sm text-green-600">{odCompta}</b></div>
+          <button className="text-xs font-semibold text-accent mt-2" onClick={()=>setTab("social")}>Voir le suivi complet →</button>
+        </Panel>
+        <Panel title="Cotisations sociales">
+          <div className="flex items-center justify-between py-2 border-b border-line"><span className="text-xs text-inksoft">Suivi complet ce mois</span><b className="text-sm text-green-600">{cotisDone}/{totalDossiers}</b></div>
+          <div className="flex items-center justify-between py-2"><span className="text-xs text-inksoft">Types suivis</span><span className="text-xs text-inkmuted">URSSAF · retraite · prévoyance · BTP</span></div>
+          <button className="text-xs font-semibold text-accent mt-2" onClick={()=>setTab("cotisations")}>Voir les cotisations →</button>
+        </Panel>
+      </div>
+      <div className="mt-4">
+        <Panel title="Échéances et accès sensibles">
+          <div className="grid md:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-line bg-accent-soft p-3"><div className="flex items-center gap-2 text-xs font-bold text-accent"><ShieldCheck size={15}/> Accès organismes sociaux</div><p className="text-[11px] text-inkmuted mt-1.5">Les identifiants sensibles sont centralisés et protégés. Accès réservé aux profils habilités.</p><button className="text-xs font-semibold text-accent" onClick={()=>setTab("acces")}>Ouvrir la rubrique →</button></div>
+            <div className="rounded-xl border border-line p-3"><div className="text-xs font-bold text-ink">Gestionnaire de paie</div><p className="text-[11px] text-inkmuted mt-1.5">Coordonnées des cabinets de paie externes et interlocuteurs par dossier.</p><button className="text-xs font-semibold text-accent" onClick={()=>setTab("paie")}>Voir les gestionnaires →</button></div>
+          </div>
+        </Panel>
+      </div>
+    </>}
+    {tab === "social" && <CadreSocialView clients={clients} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={onUpdate} />}
+    {tab === "cotisations" && <CotisationsSocialesView clients={clients} search={search} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={onUpdate} />}
+    {tab === "paie" && <GestionnairePaieView clients={clients} search={search} setSearch={setSearch} roleFilter={roleFilter} setRoleFilter={setRoleFilter} me={me} onUpdate={onUpdate} />}
+    {tab === "acces" && <AccesOrganismesSociauxView clients={(clients || []).filter((c) => c.portefeuilleId === portefeuilleId)} portefeuilleId={portefeuilleId} me={me} meRole={meRole} onOpenClient={onOpenClient} />}
+    {showNewAction && <div style={{ position:"fixed", inset:0, zIndex:80, display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <div onClick={()=>setShowNewAction(false)} style={{ position:"absolute", inset:0, background:"rgba(15,23,42,.42)" }} />
+      <div className="scrollbar" style={{ position:"relative", width:"min(760px,92vw)", maxHeight:"88vh", overflowY:"auto" }}>
+        <NewTaskForm clients={clients} team={team || []} onCancel={()=>setShowNewAction(false)} onSubmit={async payload => { await onCreateTask?.(payload); setShowNewAction(false); }} />
+      </div>
+    </div>}
+    {socialImport.open && <SocialImportPreviewModal state={socialImport} onClose={()=>!socialImport.busy && setSocialImport({open:false,file:null,preview:null,busy:false,error:""})} onConfirm={confirmSocialImport} />}
+  </div>;
+}
+
+function SocialImportPreviewModal({ state, onClose, onConfirm }) {
+  const rows = state.preview?.rows || []; const valid = state.preview?.valid || [];
+  return <div style={{ position:"fixed", inset:0, zIndex:90, display:"flex", alignItems:"center", justifyContent:"center" }}>
+    <div onClick={onClose} style={{ position:"absolute", inset:0, background:"rgba(15,23,42,.42)" }} />
+    <div className="scrollbar" style={{ position:"relative", width:"min(900px,94vw)", maxHeight:"88vh", overflowY:"auto", background:T.paper, borderRadius:16, boxShadow:T.shadowLg, padding:22 }}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start"}}>
+        <div><h3 style={{margin:0,fontFamily:T.serif,fontSize:16,fontWeight:800,color:T.ink}}>Import social — aperçu et contrôle</h3>
+        <p style={{margin:"5px 0 0",fontSize:11.5,color:T.inkMuted}}>Aucun import n'est exécuté avant votre confirmation.</p></div>
+        <button onClick={onClose} disabled={state.busy} className="topIconBtn"><X size={16}/></button>
+      </div>
+      <div style={{marginTop:14,padding:12,border:`1px solid ${T.line}`,borderRadius:12,background:T.card}}>
+        <div style={{fontSize:11,fontWeight:800,color:T.ink,marginBottom:6}}>Format attendu</div>
+        <div style={{fontSize:11,color:T.inkSoft,lineHeight:1.65}}>Colonnes recommandées : <b>Client ou Dossier</b> + <b>Mois</b> + <b>Statut</b>. SIREN/SIRET accepté pour identifier le dossier. Le <b>statut est obligatoire</b> : Reçu, Compta ou N/A. Le mois peut être écrit en toutes lettres ou 1–12.</div>
+      </div>
+      {state.busy && !state.preview && <EmptyNote text="Analyse du fichier et vérification des colonnes…" />}
+      {state.error && <div style={{marginTop:10,padding:10,borderRadius:10,background:T.redSoft,color:T.red,fontSize:11}}>{state.error}</div>}
+      {state.preview && <><div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}><Stamped tone="green" small>{valid.length} ligne(s) prête(s)</Stamped><Stamped tone={rows.length-valid.length?"amber":"green"} small>{rows.length-valid.length} ligne(s) à corriger</Stamped></div>
+        <div className="scrollbar" style={{marginTop:10,maxHeight:330,overflowY:"auto",border:`1px solid ${T.line}`,borderRadius:10,background:T.card}}>
+          {rows.slice(0,50).map(r=><div key={r.index} style={{display:"grid",gridTemplateColumns:"44px 1.2fr 90px 90px 1.3fr",gap:8,padding:"7px 9px",borderBottom:`1px solid ${T.line}`,fontSize:10.5,alignItems:"center"}}><span style={{color:T.inkMuted}}>L{r.index}</span><b>{r.client?.nom || r.clientName || "—"}</b><span>{r.month || "—"}</span><span>{r.status || "—"}</span><span style={{color:r.errors.length?T.red:T.green}}>{r.errors.length?r.errors.join(" · "):"OK"}</span></div>)}
+        </div>
+        {rows.length>50 && <div style={{fontSize:10,color:T.inkMuted,marginTop:6}}>Aperçu limité aux 50 premières lignes.</div>}
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16}}><button className="btn-secondary" onClick={onClose} disabled={state.busy}>Annuler</button><button className="btn-primary" onClick={onConfirm} disabled={state.busy || valid.length===0}>{state.busy?"Import en cours…":`Confirmer l'import (${valid.length})`}</button></div>
+      </>}
+    </div>
+  </div>;
+}
+
 function CadreSocialView({ clients, search, setSearch, roleFilter, setRoleFilter, me, onUpdate }) {
   const filtered = useMemo(() => filterClients(clients, search, roleFilter, me), [clients, search, roleFilter, me]);
   const concernes = filtered.filter((c) => c.social?.concerne);
@@ -6808,7 +7807,7 @@ function TasksPage({ tasks, clients, team, me, myRow, onCreate, onUpdate, onComp
 function TaskRow({ task, index, client, responsable, onOpenClient, onUpdate, onComplete, onDelete }) {
   return (
     <Reveal index={index} delay={0.05}>
-      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 sm:gap-3 px-3 sm:px-3.5 py-3 rounded-xl border border-line bg-white">
+      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 sm:gap-3 px-3 sm:px-3.5 py-3 rounded-xl border border-line bg-card">
         {task.isAuto ? (
           <div className="w-5 h-5 rounded-full border-[1.5px] border-line flex items-center justify-center shrink-0" title="Échéance calculée automatiquement">
             <Clock3 size={11} className="text-inkmuted" />
@@ -6952,12 +7951,12 @@ function icsDateTimePlusMinutes(dateISO, timeHHMM, minutes) {
 function buildPlanningICS(tasks, clientById) {
   const now = new Date();
   const stamp = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(now.getUTCDate()).padStart(2, "0")}T${String(now.getUTCHours()).padStart(2, "0")}${String(now.getUTCMinutes()).padStart(2, "0")}${String(now.getUTCSeconds()).padStart(2, "0")}Z`;
-  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//AXE-EXPERTS//Planning//FR", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//NOVACAB//Planning//FR", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
   tasks.filter((t) => t.date_echeance && t.heure_debut).forEach((t) => {
     const client = clientById[t.client_id];
     const summary = client ? `${client.nom} — ${t.nom}` : t.nom;
     lines.push("BEGIN:VEVENT");
-    lines.push(`UID:${t.id}@axe-experts.planning`);
+    lines.push(`UID:${t.id}@novacab.planning`);
     lines.push(`DTSTAMP:${stamp}`);
     lines.push(`DTSTART:${icsDateTime(t.date_echeance, t.heure_debut)}`);
     lines.push(`DTEND:${icsDateTimePlusMinutes(t.date_echeance, t.heure_debut, t.duree_minutes || 60)}`);
@@ -6973,7 +7972,7 @@ function exportPlanningToICS(tasks, clientById) {
   const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = `planning-axe-experts-${todayISO()}.ics`;
+  a.href = url; a.download = `planning-novacab-${todayISO()}.ics`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
@@ -7182,7 +8181,7 @@ function EquipeView({ team, portefeuilles, clients, myRole, isAdmin, myPortefeui
   const [validateRole, setValidateRole] = useState("collaborateur");
 
   const countFor = (nom) => clients.filter((c) => c.collab === nom || c.expert === nom || c.chefMission === nom).length;
-  const portefeuilleName = (id) => portefeuilles.find((p) => p.id === id)?.nom || "—";
+  const portefeuilleName = (id) => displayCabinetName(portefeuilles.find((p) => p.id === id)?.nom || "—");
 
   const pending = team.filter((t) => t.statut === "en_attente");
   const activeTeam = team.filter((t) => t.statut !== "en_attente");
@@ -7228,7 +8227,7 @@ function EquipeView({ team, portefeuilles, clients, myRole, isAdmin, myPortefeui
       {!canManageTeam && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: T.inkMuted, background: T.paper, border: `1px solid ${T.line}`, borderRadius: 12, padding: "10px 14px", marginBottom: 16 }}>
           <ShieldAlert size={15} />
-          Seuls les Experts et Chefs de mission peuvent modifier les rôles et affecter des portefeuilles.
+          Seuls les Experts et Chefs de mission peuvent modifier les rôles et affecter des portefeuilles. Les Gestionnaires de paie disposent de leur rôle métier mais ne peuvent pas administrer l'équipe.
         </div>
       )}
 
@@ -7259,7 +8258,7 @@ function EquipeView({ team, portefeuilles, clients, myRole, isAdmin, myPortefeui
                     </div>
                     {!validateNewPf ? (
                       <select value={validatePortefeuille} onChange={(e) => setValidatePortefeuille(e.target.value)} style={inputStyle}>
-                        {portefeuilles.map((p) => <option key={p.id} value={p.id}>{p.nom}{p.domaine ? ` (${p.domaine})` : ""}</option>)}
+                        {portefeuilles.map((p) => <option key={p.id} value={p.id}>{displayCabinetName(p.nom)}{p.domaine ? ` (${p.domaine})` : ""}</option>)}
                       </select>
                     ) : (
                       <div style={{ display: "flex", gap: 8 }}>
@@ -7271,6 +8270,7 @@ function EquipeView({ team, portefeuilles, clients, myRole, isAdmin, myPortefeui
                       <option value="collaborateur">Collaborateur</option>
                       <option value="expert">Expert</option>
                       <option value="chef_mission">Chef de mission</option>
+                      <option value="gestionnaire_paie">Gestionnaire de paie</option>
                     </select>
                     <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                       <button onClick={() => setValidating(null)} style={{ padding: "7px 12px", borderRadius: 9, border: `1px solid ${T.line}`, background: "none", cursor: "pointer", fontSize: 11.5 }}>Annuler</button>
@@ -7292,7 +8292,7 @@ function EquipeView({ team, portefeuilles, clients, myRole, isAdmin, myPortefeui
               <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 4px", borderBottom: `1px solid ${T.line}` }}>
                 <Wallet size={15} color={T.navy} style={{ flexShrink: 0 }} />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 12.5 }}>{p.nom}</div>
+                  <div style={{ fontWeight: 700, fontSize: 12.5 }}>{displayCabinetName(p.nom)}</div>
                   {p.domaine && <div style={{ fontSize: 11, color: T.inkMuted }}>@{p.domaine}</div>}
                 </div>
                 <span style={{ fontFamily: T.mono, fontSize: 11, color: T.inkMuted }}>{activeTeam.filter((t) => t.portefeuille_id === p.id).length} membre(s)</span>
@@ -7319,10 +8319,11 @@ function EquipeView({ team, portefeuilles, clients, myRole, isAdmin, myPortefeui
                 <option value="collaborateur">Collaborateur</option>
                 <option value="expert">Expert</option>
                 <option value="chef_mission">Chef de mission</option>
+                <option value="gestionnaire_paie">Gestionnaire de paie</option>
               </select>
               <select value={newPortefeuille} onChange={(e) => setNewPortefeuille(e.target.value)} style={inputStyle}>
                 <option value="">Aucun portefeuille</option>
-                {portefeuilles.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+                {portefeuilles.map((p) => <option key={p.id} value={p.id}>{displayCabinetName(p.nom)}</option>)}
               </select>
               <button onClick={() => { onAdd(newName, newPortefeuille, newRole); setNewName(""); }} style={{ display: "flex", alignItems: "center", gap: 6, background: T.navy, color: "#fff", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                 <Plus size={15} /> Ajouter
@@ -7356,6 +8357,7 @@ function EquipeView({ team, portefeuilles, clients, myRole, isAdmin, myPortefeui
                     <option value="collaborateur">Collaborateur</option>
                     <option value="expert">Expert</option>
                     <option value="chef_mission">Chef de mission</option>
+                    <option value="gestionnaire_paie">Gestionnaire de paie</option>
                     {t.role === "admin" && <option value="admin">Admin</option>}
                   </select>
                 ) : (
@@ -7364,7 +8366,7 @@ function EquipeView({ team, portefeuilles, clients, myRole, isAdmin, myPortefeui
                 {isAdmin && (
                   <select value={t.portefeuille_id || ""} onChange={(e) => onUpdateMember(t.id, { portefeuille_id: e.target.value || null })} style={{ ...inputStyle, padding: "6px 10px", fontSize: 11.5 }}>
                     <option value="">Aucun portefeuille</option>
-                    {portefeuilles.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+                    {portefeuilles.map((p) => <option key={p.id} value={p.id}>{displayCabinetName(p.nom)}</option>)}
                   </select>
                 )}
                 <span style={{ fontFamily: T.mono, fontSize: 11, color: T.inkMuted }}>{countFor(t.nom)} dossier(s)</span>
